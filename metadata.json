@@ -1,0 +1,8 @@
+{
+  "name": "Enterprise Internal Mail & File Portal",
+  "description": "A comprehensive on-prem enterprise mail management system integrated with Nextcloud for large file handling, featuring automated archiving, approval workflows, and administrative control panels.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
