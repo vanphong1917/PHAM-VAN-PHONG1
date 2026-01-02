@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
 
-// Default roles used as fallback
 const DEFAULT_ROLES = [
   { id: 'ADMIN', label: 'Administrator' },
   { id: 'DIRECTOR', label: 'Director' },
@@ -18,19 +17,19 @@ const DEFAULT_ROLES = [
 const UserManagement: React.FC = () => {
   const { t } = useLanguage();
   
-  // Lấy danh sách nhân viên
-  const [users, setUsers] = useState(() => {
-    const saved = localStorage.getItem('hdh_portal_users');
-    return saved ? JSON.parse(saved) : [];
+  const [db, setDb] = useState<any>(() => {
+    const cache = localStorage.getItem('hdh_master_db_cache');
+    return cache ? JSON.parse(cache) : { users: [], departments: [] };
   });
 
-  // Lấy danh sách vai trò động từ hệ thống Phân quyền
+  const [users, setUsers] = useState<any[]>(db.users || []);
+  const [departments, setDepartments] = useState<any[]>(db.departments || []);
+
   const [systemRoles, setSystemRoles] = useState(() => {
     const saved = localStorage.getItem('hdh_portal_roles');
     return saved ? JSON.parse(saved) : DEFAULT_ROLES;
   });
 
-  // Tạo map để hiển thị Label nhanh chóng
   const roleLabelMap = useMemo(() => {
     const map: Record<string, string> = {};
     systemRoles.forEach((r: any) => {
@@ -48,36 +47,55 @@ const UserManagement: React.FC = () => {
   const [newPassword, setNewPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
 
+  // Sync back function
+  const saveToMaster = (updatedUsers: any[]) => {
+    const newDb = { ...db, users: updatedUsers };
+    localStorage.setItem('hdh_master_db_cache', JSON.stringify(newDb));
+    window.dispatchEvent(new Event('storage_sync'));
+    setUsers(updatedUsers);
+    setDb(newDb);
+  };
+
   useEffect(() => {
-    localStorage.setItem('hdh_portal_users', JSON.stringify(users));
-    // Mỗi khi danh sách nhân viên thay đổi, ta cũng cần báo hiệu cho RolesPermissions biết để cập nhật userCounts
-    // Tuy nhiên trong cùng 1 phiên làm việc, useEffect của RolesPermissions sẽ tự chạy khi view đó mount.
-  }, [users]);
+    const handleSync = () => {
+      const cache = localStorage.getItem('hdh_master_db_cache');
+      if (cache) {
+        const parsed = JSON.parse(cache);
+        setDb(parsed);
+        setUsers(parsed.users || []);
+        setDepartments(parsed.departments || []);
+      }
+    };
+    window.addEventListener('storage_sync', handleSync);
+    return () => window.removeEventListener('storage_sync', handleSync);
+  }, []);
 
   const [newUser, setNewUser] = useState({
     name: '',
     username: '',
     email: '',
     password: '123',
-    dept: 'IT Systems',
+    dept: departments.length > 0 ? departments[0].name : 'IT Systems',
     role: 'USER'
   });
 
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
     const userToAdd = { id: Date.now(), ...newUser, status: 'Active' };
-    setUsers([...users, userToAdd]);
+    const updatedUsers = [...users, userToAdd];
+    saveToMaster(updatedUsers);
     setIsSuccess(true);
     setTimeout(() => {
       setIsSuccess(false);
       setIsAddUserOpen(false);
-      setNewUser({ name: '', username: '', email: '', password: '123', dept: 'IT Systems', role: 'USER' });
+      setNewUser({ name: '', username: '', email: '', password: '123', dept: departments.length > 0 ? departments[0].name : 'IT Systems', role: 'USER' });
     }, 1000);
   };
 
   const handleUpdateUser = (e: React.FormEvent) => {
     e.preventDefault();
-    setUsers(users.map((u: any) => u.id === editingUser.id ? editingUser : u));
+    const updatedUsers = users.map((u: any) => u.id === editingUser.id ? editingUser : u);
+    saveToMaster(updatedUsers);
     setIsSuccess(true);
     setTimeout(() => {
       setIsSuccess(false);
@@ -88,11 +106,10 @@ const UserManagement: React.FC = () => {
   const handleResetPassword = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPassword.trim()) return;
-
-    setUsers(users.map((u: any) => 
+    const updatedUsers = users.map((u: any) => 
       u.id === resettingUser.id ? { ...u, password: newPassword } : u
-    ));
-    
+    );
+    saveToMaster(updatedUsers);
     setIsSuccess(true);
     setTimeout(() => {
       setIsSuccess(false);
@@ -103,15 +120,16 @@ const UserManagement: React.FC = () => {
 
   const deleteUser = (id: number) => {
     if(confirm("Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản này?")) {
-      setUsers(users.filter((u: any) => u.id !== id));
+      saveToMaster(users.filter((u: any) => u.id !== id));
     }
   };
 
   const toggleStatus = (id: number) => {
-    setUsers(users.map((u: any) => {
+    const updatedUsers = users.map((u: any) => {
       if (u.id === id) return { ...u, status: u.status === 'Active' ? 'Locked' : 'Active' };
       return u;
-    }));
+    });
+    saveToMaster(updatedUsers);
   };
 
   const filteredUsers = users.filter((u: any) => {
@@ -121,7 +139,7 @@ const UserManagement: React.FC = () => {
       u.name.toLowerCase().includes(q) ||
       u.username.toLowerCase().includes(q) ||
       u.email.toLowerCase().includes(q) ||
-      u.dept.toLowerCase().includes(q) ||
+      (u.dept || '').toLowerCase().includes(q) ||
       roleLabel.includes(q)
     );
   });
@@ -136,19 +154,14 @@ const UserManagement: React.FC = () => {
           <p className="text-slate-500 text-sm italic">Quản lý định danh cho {users.length} nhân viên trong hệ thống.</p>
         </div>
         <button 
-          onClick={() => {
-            // Cập nhật lại danh sách role mới nhất trước khi mở modal
-            const savedRoles = localStorage.getItem('hdh_portal_roles');
-            if (savedRoles) setSystemRoles(JSON.parse(savedRoles));
-            setIsAddUserOpen(true);
-          }}
+          onClick={() => setIsAddUserOpen(true)}
           className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold uppercase tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95"
         >
           Thêm nhân viên
         </button>
       </div>
 
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden min-h-[500px]">
         <div className="p-4 bg-slate-50/50 border-b border-slate-100 flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -210,15 +223,7 @@ const UserManagement: React.FC = () => {
                         <MoreVertical size={18} />
                       </button>
                       <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-2xl py-2 z-30 opacity-0 invisible group-focus-within:opacity-100 group-focus-within:visible transition-all">
-                        <button 
-                          onClick={() => {
-                            // Cập nhật role list trước khi sửa
-                            const savedRoles = localStorage.getItem('hdh_portal_roles');
-                            if (savedRoles) setSystemRoles(JSON.parse(savedRoles));
-                            setEditingUser(user);
-                          }} 
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-indigo-600"
-                        >
+                        <button onClick={() => setEditingUser(user)} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-indigo-600">
                           <UserCog size={16} /> Sửa hồ sơ
                         </button>
                         <button onClick={() => setResettingUser(user)} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-amber-600 hover:bg-slate-50">
@@ -240,9 +245,106 @@ const UserManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal Reset Mật khẩu */}
+      {/* Modals ... Same logic as before but with dynamic Departments */}
+      {(isAddUserOpen || editingUser) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+           <div className="bg-white w-full max-w-xl rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp">
+              <div className="px-8 py-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-black text-slate-900 uppercase tracking-widest text-sm italic">
+                  {editingUser ? "Cập nhật nhân viên" : "Thêm nhân viên mới"}
+                </h3>
+                <button onClick={() => {setIsAddUserOpen(false); setEditingUser(null);}} className="p-2 hover:bg-white rounded-xl transition-all border border-transparent hover:border-slate-200">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <form onSubmit={editingUser ? handleUpdateUser : handleAddUser} className="p-10 space-y-6">
+                {isSuccess ? (
+                  <div className="py-12 flex flex-col items-center justify-center space-y-4">
+                    <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center shadow-lg animate-bounce">
+                      <CheckCircle2 size={40} />
+                    </div>
+                    <p className="font-black text-slate-900 text-lg uppercase tracking-tighter">Dữ liệu đã được lưu</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Họ và tên</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={editingUser ? editingUser.name : newUser.name}
+                        onChange={(e) => editingUser ? setEditingUser({...editingUser, name: e.target.value}) : setNewUser({...newUser, name: e.target.value})}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-bold text-sm"
+                        placeholder="VD: Nguyễn Văn A"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Username</label>
+                        <input 
+                          type="text" 
+                          required
+                          value={editingUser ? editingUser.username : newUser.username}
+                          onChange={(e) => editingUser ? setEditingUser({...editingUser, username: e.target.value}) : setNewUser({...newUser, username: e.target.value})}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-mono text-sm"
+                          placeholder="nv.a"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email</label>
+                        <input 
+                          type="email" 
+                          required
+                          value={editingUser ? editingUser.email : newUser.email}
+                          onChange={(e) => editingUser ? setEditingUser({...editingUser, email: e.target.value}) : setNewUser({...newUser, email: e.target.value})}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-mono text-sm"
+                          placeholder="a@hdh.com.vn"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Phòng ban</label>
+                        <select 
+                          value={editingUser ? editingUser.dept : newUser.dept}
+                          onChange={(e) => editingUser ? setEditingUser({...editingUser, dept: e.target.value}) : setNewUser({...newUser, dept: e.target.value})}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-sm"
+                        >
+                          {departments.map((d: any) => (
+                            <option key={d.id} value={d.name}>{d.name}</option>
+                          ))}
+                          {departments.length === 0 && <option value="IT Systems">IT Systems (Default)</option>}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex justify-between">
+                          Vai trò
+                        </label>
+                        <select 
+                          value={editingUser ? editingUser.role : newUser.role}
+                          onChange={(e) => editingUser ? setEditingUser({...editingUser, role: e.target.value}) : setNewUser({...newUser, role: e.target.value})}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-sm"
+                        >
+                          {systemRoles.map((role: any) => (
+                            <option key={role.id} value={role.id}>{role.label} ({role.id})</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                      <button type="button" onClick={() => {setIsAddUserOpen(false); setEditingUser(null);}} className="px-6 py-2.5 text-slate-400 font-bold uppercase tracking-widest text-xs hover:text-slate-600">Hủy</button>
+                      <button type="submit" className="px-10 py-3 bg-indigo-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-100 active:scale-95">Lưu thông tin</button>
+                    </div>
+                  </>
+                )}
+              </form>
+           </div>
+        </div>
+      )}
+
       {resettingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp">
             <div className="px-8 py-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h3 className="font-black text-slate-900 uppercase tracking-widest text-sm italic">Reset Mật khẩu</h3>
@@ -307,103 +409,6 @@ const UserManagement: React.FC = () => {
               )}
             </form>
           </div>
-        </div>
-      )}
-
-      {(isAddUserOpen || editingUser) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-           <div className="bg-white w-full max-w-xl rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp">
-              <div className="px-8 py-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-black text-slate-900 uppercase tracking-widest text-sm italic">
-                  {editingUser ? "Cập nhật nhân viên" : "Thêm nhân viên mới"}
-                </h3>
-                <button onClick={() => {setIsAddUserOpen(false); setEditingUser(null);}} className="p-2 hover:bg-white rounded-xl transition-all border border-transparent hover:border-slate-200">
-                  <X size={20} />
-                </button>
-              </div>
-
-              <form onSubmit={editingUser ? handleUpdateUser : handleAddUser} className="p-10 space-y-6">
-                {isSuccess ? (
-                  <div className="py-12 flex flex-col items-center justify-center space-y-4">
-                    <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center shadow-lg shadow-emerald-50 animate-bounce">
-                      <CheckCircle2 size={40} />
-                    </div>
-                    <p className="font-black text-slate-900 text-lg uppercase tracking-tighter">Dữ liệu đã được lưu</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Họ và tên</label>
-                      <input 
-                        type="text" 
-                        required
-                        value={editingUser ? editingUser.name : newUser.name}
-                        onChange={(e) => editingUser ? setEditingUser({...editingUser, name: e.target.value}) : setNewUser({...newUser, name: e.target.value})}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-bold text-sm"
-                        placeholder="VD: Nguyễn Văn A"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Username</label>
-                        <input 
-                          type="text" 
-                          required
-                          value={editingUser ? editingUser.username : newUser.username}
-                          onChange={(e) => editingUser ? setEditingUser({...editingUser, username: e.target.value}) : setNewUser({...newUser, username: e.target.value})}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-mono text-sm"
-                          placeholder="nv.a"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email</label>
-                        <input 
-                          type="email" 
-                          required
-                          value={editingUser ? editingUser.email : newUser.email}
-                          onChange={(e) => editingUser ? setEditingUser({...editingUser, email: e.target.value}) : setNewUser({...newUser, email: e.target.value})}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-mono text-sm"
-                          placeholder="a@hdh.com.vn"
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Phòng ban</label>
-                        <select 
-                          value={editingUser ? editingUser.dept : newUser.dept}
-                          onChange={(e) => editingUser ? setEditingUser({...editingUser, dept: e.target.value}) : setNewUser({...newUser, dept: e.target.value})}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-sm"
-                        >
-                          <option>IT Systems</option>
-                          <option>HR Dept</option>
-                          <option>Finance</option>
-                          <option>Executive</option>
-                        </select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex justify-between">
-                          Vai trò
-                        </label>
-                        <select 
-                          value={editingUser ? editingUser.role : newUser.role}
-                          onChange={(e) => editingUser ? setEditingUser({...editingUser, role: e.target.value}) : setNewUser({...newUser, role: e.target.value})}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-sm"
-                        >
-                          {systemRoles.map((role: any) => (
-                            <option key={role.id} value={role.id}>{role.label} ({role.id})</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
-                      <button type="button" onClick={() => {setIsAddUserOpen(false); setEditingUser(null);}} className="px-6 py-2.5 text-slate-400 font-bold uppercase tracking-widest text-xs hover:text-slate-600">Hủy</button>
-                      <button type="submit" className="px-10 py-3 bg-indigo-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-100 active:scale-95">Lưu thông tin</button>
-                    </div>
-                  </>
-                )}
-              </form>
-           </div>
         </div>
       )}
     </div>

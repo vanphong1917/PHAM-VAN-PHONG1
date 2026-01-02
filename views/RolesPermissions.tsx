@@ -82,7 +82,8 @@ const RolesPermissions: React.FC = () => {
 
   // Sync user counts from actual directory
   useEffect(() => {
-    const users = JSON.parse(localStorage.getItem('hdh_portal_users') || '[]');
+    const savedUsers = localStorage.getItem('hdh_portal_users');
+    const users = savedUsers ? JSON.parse(savedUsers) : [];
     const counts: Record<string, number> = {};
     users.forEach((u: any) => {
       const roleId = u.role || 'USER';
@@ -110,6 +111,7 @@ const RolesPermissions: React.FC = () => {
     setIsSaving(true);
     setTimeout(() => {
       localStorage.setItem('hdh_portal_role_permissions', JSON.stringify(rolePermissions));
+      localStorage.setItem('hdh_portal_roles', JSON.stringify(roles));
       setIsSaving(false);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -129,7 +131,8 @@ const RolesPermissions: React.FC = () => {
     }
 
     const roleToAdd = { ...newRole, id: roleId };
-    setRoles([...roles, roleToAdd]);
+    const updatedRoles = [...roles, roleToAdd];
+    setRoles(updatedRoles);
     
     // Khởi tạo quyền mặc định (chỉ xem)
     setRolePermissions(prev => ({

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Mail, Shield, FileText, Users, Settings, Database, PieChart, Bell, Search, LogOut,
   ChevronRight, Menu, X, Layers, Archive, Cloud, Globe, LayoutDashboard,
-  ShieldAlert, UserCircle, ClipboardList, Languages, LockKeyhole, HardDrive, AlertTriangle, Check
+  ShieldAlert, UserCircle, ClipboardList, Languages, LockKeyhole, HardDrive, AlertTriangle, Check, ShieldCheck, Building2
 } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './LanguageContext.tsx';
 import UserDashboard from './views/UserDashboard.tsx';
@@ -13,6 +13,7 @@ import ApprovalList from './views/ApprovalList.tsx';
 import RequestDetail from './views/RequestDetail.tsx';
 import SystemMonitor from './views/SystemMonitor.tsx';
 import UserManagement from './views/UserManagement.tsx';
+import DepartmentManagement from './views/DepartmentManagement.tsx';
 import RolesPermissions from './views/RolesPermissions.tsx';
 import SecurityPolicy from './views/SecurityPolicy.tsx';
 import UserProfile from './views/UserProfile.tsx';
@@ -21,13 +22,16 @@ import Login from './views/Login.tsx';
 
 const DB_FILE_NAME = 'hdh_master_db.json';
 
-// Cấu trúc DB mới: Tách biệt dữ liệu từng user
 const DEFAULT_SYSTEM_DATA = {
   users: [
     { id: 1, name: 'Admin System', username: 'admin.hdh', email: 'admin@hdh.com.vn', dept: 'IT Systems', role: 'ADMIN', status: 'Active', password: 'admin123', avatar: '' },
     { id: 2, name: 'Nguyễn Văn Phong', username: 'phong.hdh', email: 'phong.hdh@hdh.com.vn', dept: 'IT Systems', role: 'USER', status: 'Active', password: '123', avatar: '' }
   ],
-  // Phân vùng dữ liệu riêng cho từng user
+  departments: [
+    { id: 'DEPT01', name: 'IT Systems', head: 'Admin System', description: 'Quản trị hạ tầng công nghệ và bảo mật bare-metal.' },
+    { id: 'DEPT02', name: 'Human Resources', head: '', description: 'Quản lý nhân sự và chính sách nội bộ.' },
+    { id: 'DEPT03', name: 'Finance', head: '', description: 'Quản lý tài chính và kế hoạch ngân sách.' }
+  ],
   user_storages: {
     'admin.hdh': { mails: { INBOX: [], SENT: [], DRAFTS: [] }, files: [] },
     'phong.hdh': { mails: { INBOX: [], SENT: [], DRAFTS: [] }, files: [] }
@@ -42,7 +46,7 @@ const DEFAULT_SYSTEM_DATA = {
   }
 };
 
-type Page = 'DASHBOARD' | 'INBOX' | 'APPROVALS' | 'REQUESTS' | 'USERS' | 'ROLES' | 'POLICIES' | 'SYSTEM' | 'ARCHIVE' | 'PROFILE';
+type Page = 'DASHBOARD' | 'INBOX' | 'APPROVALS' | 'REQUESTS' | 'USERS' | 'DEPARTMENTS' | 'ROLES' | 'POLICIES' | 'SYSTEM' | 'ARCHIVE' | 'PROFILE';
 
 const AppContent: React.FC = () => {
   const { t, locale, setLocale } = useLanguage();
@@ -62,7 +66,6 @@ const AppContent: React.FC = () => {
       const writable = await fileHandle.createWritable();
       await writable.write(JSON.stringify(data, null, 2));
       await writable.close();
-      console.log('✅ Master DB đã được cập nhật trên ổ cứng');
     } catch (err) {
       console.error('❌ Lỗi ghi file vật lý:', err);
     }
@@ -73,15 +76,11 @@ const AppContent: React.FC = () => {
       const handle = await (window as any).showDirectoryPicker();
       setDirHandle(handle);
       setIsDiskConnected(true);
-      
       try {
         const fileHandle = await handle.getFileHandle(DB_FILE_NAME);
         const file = await fileHandle.getFile();
         const diskData = JSON.parse(await file.text());
-        
-        // Cập nhật Cache LocalStorage từ Disk
         localStorage.setItem('hdh_master_db_cache', JSON.stringify(diskData));
-        console.log('📂 Đã nạp Master DB từ ổ cứng vật lý');
       } catch (e) {
         await syncToDisk(DEFAULT_SYSTEM_DATA);
         localStorage.setItem('hdh_master_db_cache', JSON.stringify(DEFAULT_SYSTEM_DATA));
@@ -110,6 +109,21 @@ const AppContent: React.FC = () => {
     }
   }, []);
 
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('hdh_current_session');
+    setActivePage('DASHBOARD');
+    setSelectedRequestId(null);
+  };
+
+  const handleLogin = (u: any, rememberMe: boolean) => {
+    setUser(u);
+    const mode = u.role === 'ADMIN' ? 'ADMIN' : 'USER';
+    setViewMode(mode);
+    setActivePage('DASHBOARD');
+    if (rememberMe) localStorage.setItem('hdh_current_session', JSON.stringify(u));
+  };
+
   const navigate = (page: Page, id?: string) => {
     setActivePage(page);
     if (id) setSelectedRequestId(id);
@@ -117,12 +131,12 @@ const AppContent: React.FC = () => {
   };
 
   if (!user) {
-    return <Login onLogin={(u, r) => {
-      setUser(u);
-      setViewMode(u.role === 'ADMIN' ? 'ADMIN' : 'USER');
-      if (r) localStorage.setItem('hdh_current_session', JSON.stringify(u));
-    }} />;
+    return <Login onLogin={handleLogin} />;
   }
+
+  const adminOnlyPages: Page[] = ['USERS', 'DEPARTMENTS', 'ROLES', 'POLICIES', 'SYSTEM'];
+  const isAuthorized = !(adminOnlyPages.includes(activePage) && viewMode !== 'ADMIN');
+  const safeActivePage = isAuthorized ? activePage : 'DASHBOARD';
 
   return (
     <div className={`flex h-screen overflow-hidden ${viewMode === 'ADMIN' ? 'bg-slate-100/50' : 'bg-slate-50'}`}>
@@ -140,23 +154,25 @@ const AppContent: React.FC = () => {
         <nav className="flex-1 mt-6 px-3 space-y-1 overflow-y-auto">
           {viewMode === 'USER' ? (
             <>
-              <NavItem icon={<LayoutDashboard size={20} />} label={t('dashboard')} active={activePage === 'DASHBOARD'} collapsed={!sidebarOpen} onClick={() => navigate('DASHBOARD')} />
-              <NavItem icon={<Mail size={20} />} label={t('internalMail')} active={activePage === 'INBOX'} collapsed={!sidebarOpen} onClick={() => navigate('INBOX')} />
-              <NavItem icon={<ClipboardList size={20} />} label={t('myApprovals')} active={activePage === 'APPROVALS' || activePage === 'REQUESTS'} collapsed={!sidebarOpen} onClick={() => navigate('APPROVALS')} />
-              <NavItem icon={<Cloud size={20} />} label={t('filePortal')} active={activePage === 'ARCHIVE'} collapsed={!sidebarOpen} onClick={() => navigate('ARCHIVE')} />
-              <NavItem icon={<UserCircle size={20} />} label="Cá nhân" active={activePage === 'PROFILE'} collapsed={!sidebarOpen} onClick={() => navigate('PROFILE')} />
+              <NavItem icon={<LayoutDashboard size={20} />} label={t('dashboard')} active={safeActivePage === 'DASHBOARD'} collapsed={!sidebarOpen} onClick={() => navigate('DASHBOARD')} />
+              <NavItem icon={<Mail size={20} />} label={t('internalMail')} active={safeActivePage === 'INBOX'} collapsed={!sidebarOpen} onClick={() => navigate('INBOX')} />
+              <NavItem icon={<ClipboardList size={20} />} label={t('myApprovals')} active={safeActivePage === 'APPROVALS' || safeActivePage === 'REQUESTS'} collapsed={!sidebarOpen} onClick={() => navigate('APPROVALS')} />
+              <NavItem icon={<Cloud size={20} />} label={t('filePortal')} active={safeActivePage === 'ARCHIVE'} collapsed={!sidebarOpen} onClick={() => navigate('ARCHIVE')} />
+              <NavItem icon={<UserCircle size={20} />} label="Cá nhân" active={safeActivePage === 'PROFILE'} collapsed={!sidebarOpen} onClick={() => navigate('PROFILE')} />
             </>
           ) : (
             <>
-              <NavItem icon={<PieChart size={20} />} label="Tổng quan" active={activePage === 'DASHBOARD'} collapsed={!sidebarOpen} onClick={() => navigate('DASHBOARD')} colorClass="text-rose-400" activeClass="bg-rose-600" />
-              <NavItem icon={<Users size={20} />} label={t('directory')} active={activePage === 'USERS'} collapsed={!sidebarOpen} onClick={() => navigate('USERS')} colorClass="text-rose-400" activeClass="bg-rose-600" />
-              <NavItem icon={<Database size={20} />} label="Hệ thống" active={activePage === 'SYSTEM'} collapsed={!sidebarOpen} onClick={() => navigate('SYSTEM')} colorClass="text-rose-400" activeClass="bg-rose-600" />
-              <NavItem icon={<Shield size={20} />} label="Bảo mật" active={activePage === 'POLICIES'} collapsed={!sidebarOpen} onClick={() => navigate('POLICIES')} colorClass="text-rose-400" activeClass="bg-rose-600" />
+              <NavItem icon={<PieChart size={20} />} label="Tổng quan" active={safeActivePage === 'DASHBOARD'} collapsed={!sidebarOpen} onClick={() => navigate('DASHBOARD')} colorClass="text-rose-400" activeClass="bg-rose-600" />
+              <NavItem icon={<Building2 size={20} />} label="Phòng ban" active={safeActivePage === 'DEPARTMENTS'} collapsed={!sidebarOpen} onClick={() => navigate('DEPARTMENTS')} colorClass="text-rose-400" activeClass="bg-rose-600" />
+              <NavItem icon={<Users size={20} />} label={t('directory')} active={safeActivePage === 'USERS'} collapsed={!sidebarOpen} onClick={() => navigate('USERS')} colorClass="text-rose-400" activeClass="bg-rose-600" />
+              <NavItem icon={<ShieldCheck size={20} />} label="Phân quyền" active={safeActivePage === 'ROLES'} collapsed={!sidebarOpen} onClick={() => navigate('ROLES')} colorClass="text-rose-400" activeClass="bg-rose-600" />
+              <NavItem icon={<Database size={20} />} label="Hệ thống" active={safeActivePage === 'SYSTEM'} collapsed={!sidebarOpen} onClick={() => navigate('SYSTEM')} colorClass="text-rose-400" activeClass="bg-rose-600" />
+              <NavItem icon={<Shield size={20} />} label="Bảo mật" active={safeActivePage === 'POLICIES'} collapsed={!sidebarOpen} onClick={() => navigate('POLICIES')} colorClass="text-rose-400" activeClass="bg-rose-600" />
             </>
           )}
         </nav>
         <div className="p-4 border-t border-slate-800 space-y-2">
-           <button onClick={() => { setUser(null); localStorage.removeItem('hdh_current_session'); }} className="w-full flex items-center gap-3 p-3 rounded-xl transition-all text-slate-500 hover:text-rose-400 text-[10px] font-bold uppercase tracking-widest">
+           <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl transition-all text-slate-500 hover:text-rose-400 text-[10px] font-bold uppercase tracking-widest">
             <LogOut size={18} /> {sidebarOpen && "Đăng xuất"}
           </button>
         </div>
@@ -197,22 +213,28 @@ const AppContent: React.FC = () => {
         </header>
 
         <div className="flex-1 overflow-y-auto p-10 bg-slate-50/50">
-          {activePage === 'INBOX' ? (
+          {safeActivePage === 'INBOX' ? (
             <MailInbox currentUser={user} />
-          ) : activePage === 'SYSTEM' ? (
+          ) : safeActivePage === 'SYSTEM' ? (
             <SystemMonitor isDiskConnected={isDiskConnected} onConnect={connectToPhysicalDisk} />
-          ) : activePage === 'DASHBOARD' ? (
+          ) : safeActivePage === 'DASHBOARD' ? (
             viewMode === 'USER' ? <UserDashboard currentUser={user} onNavigate={navigate} /> : <AdminDashboard onNavigate={navigate} />
-          ) : activePage === 'USERS' ? (
+          ) : safeActivePage === 'USERS' ? (
             <UserManagement />
-          ) : activePage === 'PROFILE' ? (
+          ) : safeActivePage === 'DEPARTMENTS' ? (
+            <DepartmentManagement />
+          ) : safeActivePage === 'ROLES' ? (
+            <RolesPermissions />
+          ) : safeActivePage === 'PROFILE' ? (
             <UserProfile user={user} />
-          ) : activePage === 'ARCHIVE' ? (
+          ) : safeActivePage === 'ARCHIVE' ? (
             <FilePortal />
-          ) : activePage === 'APPROVALS' ? (
+          ) : safeActivePage === 'APPROVALS' ? (
             <ApprovalList currentUser={user} onViewRequest={(id) => navigate('REQUESTS', id)} />
-          ) : activePage === 'REQUESTS' && selectedRequestId ? (
+          ) : safeActivePage === 'REQUESTS' && selectedRequestId ? (
             <RequestDetail id={selectedRequestId} currentUser={user} onBack={() => navigate('APPROVALS')} />
+          ) : safeActivePage === 'POLICIES' ? (
+            <SecurityPolicy />
           ) : null}
         </div>
       </main>

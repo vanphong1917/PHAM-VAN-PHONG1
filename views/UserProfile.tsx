@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   User, Mail, Building2, Calendar, Camera, Lock, Bell, Shield, Save, 
-  CheckCircle2, Key, Smartphone, Eye, EyeOff, LogOut, Settings
+  CheckCircle2, Key, Smartphone, Eye, EyeOff, LogOut, Settings, Info, AlertTriangle
 } from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
 
@@ -20,6 +20,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
   
   // Khởi tạo state từ dữ liệu thực tế trong DB
   const [localUserData, setLocalUserData] = useState<any>(null);
+
+  const isAdmin = user.role === 'ADMIN';
 
   useEffect(() => {
     const allUsers = JSON.parse(localStorage.getItem('hdh_portal_users') || '[]');
@@ -68,8 +70,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
         }
 
         setLocalUserData({ ...localUserData, avatar: base64Avatar });
-        
-        // Trigger event để các component khác (như Header) biết để cập nhật
         window.dispatchEvent(new Event('storage'));
       };
       reader.readAsDataURL(file);
@@ -81,8 +81,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
     setIsSaving(true);
 
     setTimeout(() => {
-      // Logic đổi mật khẩu thực tế
-      if (formData.newPassword) {
+      // Chỉ Admin mới được xử lý logic đổi mật khẩu ở đây
+      if (isAdmin && formData.newPassword) {
         if (formData.newPassword !== formData.confirmPassword) {
           alert("Mật khẩu xác nhận không khớp");
           setIsSaving(false);
@@ -96,7 +96,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
         localStorage.setItem('hdh_portal_users', JSON.stringify(updatedUsers));
       }
 
-      // Lưu các settings khác (Notification, MFA)
+      // Lưu các settings thông báo (User vẫn được quyền chỉnh sửa cái này)
       const settings = {
         notifyEmail: formData.notifyEmail,
         notifyBrowser: formData.notifyBrowser,
@@ -188,9 +188,11 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
               <p className="text-[10px] text-slate-500 leading-relaxed italic font-medium">
                 * Mã xác thực 2 lớp (MFA) được đồng bộ hóa với hệ thống AD nội bộ để bảo vệ các thao tác hạ tầng.
               </p>
-              <button className="w-full py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/10">
-                Lấy lại mã phục hồi
-              </button>
+              {isAdmin && (
+                <button className="w-full py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/10">
+                  Lấy lại mã phục hồi
+                </button>
+              )}
             </div>
             <Lock size={120} className="absolute -bottom-10 -right-10 text-white/5 rotate-12 group-hover:scale-110 transition-transform duration-700" />
           </div>
@@ -199,65 +201,83 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
         {/* Right Column: Settings Form */}
         <div className="lg:col-span-8">
           <form onSubmit={handleSaveSettings} className="space-y-8">
-            {/* Password Section */}
-            <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-10 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center gap-4">
-                <div className="p-2 bg-white rounded-xl shadow-sm"><Key className="text-indigo-600" size={18} /></div>
-                <h3 className="font-black text-slate-900 text-[11px] uppercase tracking-[0.2em] italic">Thay đổi khóa bảo mật</h3>
-              </div>
-              <div className="p-10 space-y-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu cũ</label>
-                    <div className="relative group">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={18} />
-                      <input 
-                        type={showPassword ? "text" : "password"} 
-                        value={formData.oldPassword}
-                        onChange={(e) => setFormData({...formData, oldPassword: e.target.value})}
-                        className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-50 transition-all text-sm font-bold" 
-                        placeholder="••••••••"
-                      />
-                    </div>
-                  </div>
-                  <div></div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu mới</label>
-                    <div className="relative group">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={18} />
-                      <input 
-                        type={showPassword ? "text" : "password"} 
-                        value={formData.newPassword}
-                        onChange={(e) => setFormData({...formData, newPassword: e.target.value})}
-                        className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-50 transition-all text-sm font-bold" 
-                        placeholder="Tối thiểu 8 ký tự"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Xác nhận mật khẩu</label>
-                    <div className="relative group">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={18} />
-                      <input 
-                        type={showPassword ? "text" : "password"} 
-                        value={formData.confirmPassword}
-                        onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-                        className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-50 transition-all text-sm font-bold" 
-                        placeholder="Nhập lại mật khẩu mới"
-                      />
-                    </div>
-                  </div>
+            
+            {/* Password Section - CHỈ HIỂN THỊ VỚI ADMIN */}
+            {isAdmin ? (
+              <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden animate-fadeIn">
+                <div className="px-10 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center gap-4">
+                  <div className="p-2 bg-white rounded-xl shadow-sm"><Key className="text-indigo-600" size={18} /></div>
+                  <h3 className="font-black text-slate-900 text-[11px] uppercase tracking-[0.2em] italic">Thay đổi khóa bảo mật</h3>
                 </div>
-                <button 
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="text-[10px] text-indigo-600 font-black uppercase tracking-widest flex items-center gap-2 hover:underline"
-                >
-                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                  {showPassword ? "Ẩn khóa bí mật" : "Hiện khóa bí mật"}
-                </button>
+                <div className="p-10 space-y-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu cũ</label>
+                      <div className="relative group">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={18} />
+                        <input 
+                          type={showPassword ? "text" : "password"} 
+                          value={formData.oldPassword}
+                          onChange={(e) => setFormData({...formData, oldPassword: e.target.value})}
+                          className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-50 transition-all text-sm font-bold" 
+                          placeholder="••••••••"
+                        />
+                      </div>
+                    </div>
+                    <div></div>
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu mới</label>
+                      <div className="relative group">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={18} />
+                        <input 
+                          type={showPassword ? "text" : "password"} 
+                          value={formData.newPassword}
+                          onChange={(e) => setFormData({...formData, newPassword: e.target.value})}
+                          className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-50 transition-all text-sm font-bold" 
+                          placeholder="Tối thiểu 8 ký tự"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Xác nhận mật khẩu</label>
+                      <div className="relative group">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" size={18} />
+                        <input 
+                          type={showPassword ? "text" : "password"} 
+                          value={formData.confirmPassword}
+                          onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+                          className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-50 transition-all text-sm font-bold" 
+                          placeholder="Nhập lại mật khẩu mới"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-[10px] text-indigo-600 font-black uppercase tracking-widest flex items-center gap-2 hover:underline"
+                  >
+                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {showPassword ? "Ẩn khóa bí mật" : "Hiện khóa bí mật"}
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-amber-50 rounded-[2.5rem] border border-amber-200 p-8 flex items-start gap-6 animate-fadeIn shadow-sm shadow-amber-50">
+                <div className="p-4 bg-white rounded-2xl text-amber-600 shadow-sm border border-amber-100">
+                  <AlertTriangle size={24} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-amber-900 uppercase tracking-widest mb-2">Thông báo bảo mật</h3>
+                  <p className="text-xs text-amber-800 leading-relaxed font-medium">
+                    Theo quy định an toàn hệ thống hdh, người dùng không được phép tự thay đổi các thiết lập bảo mật cấp cao (Mật khẩu, MFA). 
+                  </p>
+                  <p className="text-xs text-amber-700/80 leading-relaxed font-bold mt-2 italic">
+                    Vui lòng liên hệ Quản trị viên (Admin) hoặc bộ phận IT Systems để yêu cầu cập nhật thông tin bảo mật.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Notifications Section */}
             <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
