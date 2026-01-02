@@ -147,6 +147,16 @@ const FilePortal: React.FC = () => {
     }
   };
 
+  const handleDownloadFile = (file: FileItem) => {
+    if (!file.data) return;
+    const link = document.createElement('a');
+    link.href = file.data;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleViewFile = (file: FileItem) => {
     if (file.type === 'folder') {
       setCurrentFolderId(file.id);
@@ -156,21 +166,35 @@ const FilePortal: React.FC = () => {
       alert("Tệp tin này không có dữ liệu thực tế.");
       return;
     }
-    const newWindow = window.open();
-    if (newWindow) {
-      newWindow.document.write(`<iframe src="${file.data}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-      newWindow.document.title = file.name;
-    }
-  };
 
-  const handleDownloadFile = (file: FileItem) => {
-    if (!file.data) return;
-    const link = document.createElement('a');
-    link.href = file.data;
-    link.download = file.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const base64Parts = file.data.split(',');
+      if (base64Parts.length < 2) {
+        window.open(file.data, '_blank');
+        return;
+      }
+      
+      const base64Data = base64Parts[1];
+      const contentType = base64Parts[0].split(':')[1].split(';')[0];
+      
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: contentType });
+      const fileURL = URL.createObjectURL(blob);
+      
+      // Mở tệp bằng trình xem mặc định (PDF viewer, Image viewer, etc.)
+      const newWindow = window.open(fileURL, '_blank');
+      if (!newWindow) {
+        alert("Vui lòng cho phép trình duyệt mở cửa sổ mới để xem tệp bằng trình đọc mặc định.");
+      }
+    } catch (e) {
+      console.error("Lỗi khi xem tệp:", e);
+      handleDownloadFile(file);
+    }
   };
 
   const toggleStar = (id: string, e: React.MouseEvent) => {
@@ -205,7 +229,7 @@ const FilePortal: React.FC = () => {
   };
 
   return (
-    <div className="h-full flex flex-col gap-6 animate-fadeIn">
+    <div className="h-full flex flex-col gap-6 animate-fadeIn max-w-screen-2xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
@@ -218,7 +242,7 @@ const FilePortal: React.FC = () => {
           <button 
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
-            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-2xl text-sm font-black shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50 uppercase tracking-widest"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-2xl text-sm font-black shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50 uppercase tracking-widest"
           >
             {isUploading ? <RefreshCw className="animate-spin" size={18} /> : <Upload size={18} />}
             Tải lên
@@ -227,27 +251,28 @@ const FilePortal: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 flex gap-6 min-h-0 overflow-hidden">
-        <aside className="w-56 shrink-0 hidden lg:flex flex-col gap-1">
-          <SidebarBtn icon={<Cloud size={18} />} label="Tất cả tệp tin" active={activeTab === 'ALL'} onClick={() => { setActiveTab('ALL'); setCurrentFolderId(null); }} />
+      <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0 overflow-hidden">
+        {/* Mobile Navigation Tabs */}
+        <aside className="w-full lg:w-56 shrink-0 flex lg:flex-col gap-1 overflow-x-auto lg:overflow-y-auto scrollbar-hide py-1">
+          <SidebarBtn icon={<Cloud size={18} />} label="Tất cả" active={activeTab === 'ALL'} onClick={() => { setActiveTab('ALL'); setCurrentFolderId(null); }} />
           <SidebarBtn icon={<Clock size={18} />} label="Gần đây" active={activeTab === 'RECENT'} onClick={() => setActiveTab('RECENT')} />
           <SidebarBtn icon={<Star size={18} />} label="Đánh dấu" active={activeTab === 'STARRED'} onClick={() => setActiveTab('STARRED')} />
-          <SidebarBtn icon={<Users size={18} />} label="Đã chia sẻ" active={activeTab === 'SHARED'} onClick={() => setActiveTab('SHARED')} />
+          <SidebarBtn icon={<Users size={18} />} label="Chia sẻ" active={activeTab === 'SHARED'} onClick={() => setActiveTab('SHARED')} />
           <SidebarBtn icon={<Trash2 size={18} />} label="Thùng rác" active={activeTab === 'TRASH'} onClick={() => setActiveTab('TRASH')} />
 
-          <div className="mt-auto p-6 bg-slate-900 rounded-[2rem] text-white shadow-2xl relative overflow-hidden group">
+          <div className="mt-auto p-6 bg-slate-900 rounded-[2rem] text-white shadow-2xl relative overflow-hidden group hidden lg:block">
             <div className="relative z-10">
               <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-4">Storage Quota</h4>
               <div className="flex justify-between text-xs font-bold mb-2"><span>1.2 GB</span><span className="text-slate-500">20 GB</span></div>
               <div className="w-full bg-white/10 h-2 rounded-full mb-4"><div className="bg-indigo-400 h-full rounded-full transition-all duration-1000" style={{ width: '6%' }}></div></div>
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Hiệu năng: bare-metal NVMe</p>
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">NVMe Performance</p>
             </div>
             <HardDrive size={100} className="absolute -bottom-6 -right-6 text-white/5 rotate-12 group-hover:scale-110 transition-transform duration-500" />
           </div>
         </aside>
 
-        <div className="flex-1 flex flex-col min-w-0 bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-4">
+        <div className="flex-1 flex flex-col min-w-0 bg-white rounded-[1.5rem] lg:rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 sm:px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <nav className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide py-1">
               {breadcrumbs.map((bc, idx) => (
                 <React.Fragment key={idx}>
@@ -256,64 +281,68 @@ const FilePortal: React.FC = () => {
                 </React.Fragment>
               ))}
             </nav>
-            <div className="relative w-48 md:w-72">
+            <div className="relative w-full sm:w-48 md:w-72">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Tìm kiếm tài liệu..." className="w-full pl-12 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-[11px] outline-none focus:ring-4 focus:ring-indigo-50 font-bold transition-all" />
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="sticky top-0 bg-white/90 backdrop-blur-md z-10 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                  <th className="px-8 py-5">Tên tệp tin</th>
-                  <th className="px-6 py-5 hidden sm:table-cell">Dung lượng</th>
-                  <th className="px-6 py-5 hidden md:table-cell">Sửa đổi cuối</th>
-                  <th className="px-6 py-5 w-10 text-center"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {currentFiles.map((file) => (
-                  <tr key={file.id} className="group hover:bg-indigo-50/30 transition-all cursor-pointer" onClick={() => handleViewFile(file)}>
-                    <td className="px-8 py-4">
-                      <div className="flex items-center gap-4">
-                        <button onClick={(e) => toggleStar(file.id, e)} className={`p-1 transition-colors ${file.starred ? 'text-amber-400' : 'text-slate-200 group-hover:text-slate-300'}`}><Star size={14} fill={file.starred ? 'currentColor' : 'none'} /></button>
-                        <div className="p-3 bg-slate-100 rounded-2xl transition-all group-hover:scale-110 group-hover:bg-white group-hover:shadow-lg shadow-indigo-100">{getFileIcon(file.type)}</div>
-                        <div>
-                          <p className="text-sm font-black text-slate-900 flex items-center gap-2">{file.name}{file.shared && <Users size={12} className="text-indigo-400" />}</p>
-                          <p className="text-[10px] font-bold text-slate-400 md:hidden uppercase tracking-widest">{file.size} • {file.modified}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 hidden sm:table-cell text-[11px] font-black text-slate-500 uppercase">{file.size}</td>
-                    <td className="px-6 py-4 hidden md:table-cell text-[11px] font-bold text-slate-400 italic">{file.modified}</td>
-                    <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                      <div className="relative group/actions inline-block">
-                        <button className="p-2 text-slate-300 hover:text-indigo-600 rounded-xl hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 transition-all"><MoreVertical size={18} /></button>
-                        <div className="absolute right-0 mt-2 w-52 bg-white border border-slate-200 rounded-[1.5rem] shadow-2xl py-3 z-20 opacity-0 invisible group-focus-within:opacity-100 group-focus-within:visible transition-all">
-                          {!file.inTrash ? (
-                            <>
-                              <button onClick={() => handleViewFile(file)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><Eye size={16} /> Xem trước</button>
-                              <button onClick={() => handleDownloadFile(file)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-slate-600 hover:bg-indigo-50"><Download size={16} /> Tải về máy</button>
-                              <button onClick={() => setShowShareModal(file)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-slate-600 hover:bg-indigo-50"><Share2 size={16} /> Chia sẻ liên kết</button>
-                              <div className="h-px bg-slate-50 my-2 mx-3"></div>
-                              <button onClick={() => moveToTrash(file.id)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 size={16} /> Chuyển vào Thùng rác</button>
-                            </>
-                          ) : (
-                            <>
-                              <button onClick={() => restoreFromTrash(file.id)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-emerald-600 hover:bg-emerald-50"><RotateCcw size={16} /> Khôi phục</button>
-                              <button onClick={() => deletePermanently(file.id)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 size={16} /> Xóa vĩnh viễn</button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="min-w-full inline-block align-middle">
+               <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[500px]">
+                  <thead>
+                    <tr className="sticky top-0 bg-white/90 backdrop-blur-md z-10 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                      <th className="px-8 py-5">Tên tệp tin</th>
+                      <th className="px-6 py-5 hidden sm:table-cell">Dung lượng</th>
+                      <th className="px-6 py-5 hidden md:table-cell">Sửa đổi cuối</th>
+                      <th className="px-6 py-5 w-10 text-center"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {currentFiles.map((file) => (
+                      <tr key={file.id} className="group hover:bg-indigo-50/30 transition-all cursor-pointer" onClick={() => handleViewFile(file)}>
+                        <td className="px-8 py-4">
+                          <div className="flex items-center gap-4">
+                            <button onClick={(e) => toggleStar(file.id, e)} className={`p-1 transition-colors ${file.starred ? 'text-amber-400' : 'text-slate-200 group-hover:text-slate-300'}`}><Star size={14} fill={file.starred ? 'currentColor' : 'none'} /></button>
+                            <div className="p-3 bg-slate-100 rounded-2xl transition-all group-hover:scale-110 group-hover:bg-white group-hover:shadow-lg shadow-indigo-100 shrink-0">{getFileIcon(file.type)}</div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-black text-slate-900 flex items-center gap-2 truncate">{file.name}{file.shared && <Users size={12} className="text-indigo-400" />}</p>
+                              <p className="text-[10px] font-bold text-slate-400 md:hidden uppercase tracking-widest">{file.size} • {file.modified}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 hidden sm:table-cell text-[11px] font-black text-slate-500 uppercase">{file.size}</td>
+                        <td className="px-6 py-4 hidden md:table-cell text-[11px] font-bold text-slate-400 italic">{file.modified}</td>
+                        <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                          <div className="relative group/actions inline-block">
+                            <button className="p-2 text-slate-300 hover:text-indigo-600 rounded-xl hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 transition-all"><MoreVertical size={18} /></button>
+                            <div className="absolute right-0 mt-2 w-52 bg-white border border-slate-200 rounded-[1.5rem] shadow-2xl py-3 z-20 opacity-0 invisible group-focus-within:opacity-100 group-focus-within:visible transition-all">
+                              {!file.inTrash ? (
+                                <>
+                                  <button onClick={() => handleViewFile(file)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><Eye size={16} /> Xem bằng trình đọc</button>
+                                  <button onClick={() => handleDownloadFile(file)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-slate-600 hover:bg-indigo-50"><Download size={16} /> Tải về máy</button>
+                                  <button onClick={() => setShowShareModal(file)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-slate-600 hover:bg-indigo-50"><Share2 size={16} /> Chia sẻ liên kết</button>
+                                  <div className="h-px bg-slate-50 my-2 mx-3"></div>
+                                  <button onClick={() => moveToTrash(file.id)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 size={16} /> Chuyển vào Thùng rác</button>
+                                </>
+                              ) : (
+                                <>
+                                  <button onClick={() => restoreFromTrash(file.id)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-emerald-600 hover:bg-emerald-50"><RotateCcw size={16} /> Khôi phục</button>
+                                  <button onClick={() => deletePermanently(file.id)} className="w-full flex items-center gap-3 px-5 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50"><Trash2 size={16} /> Xóa vĩnh viễn</button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
             {currentFiles.length === 0 && (
-              <div className="p-32 text-center text-slate-300 flex flex-col items-center animate-fadeIn">
+              <div className="p-16 sm:p-32 text-center text-slate-300 flex flex-col items-center animate-fadeIn">
                 <div className="p-10 bg-slate-50 rounded-[3rem] mb-6"><Folder size={80} className="opacity-10" /></div>
                 <p className="font-black text-xs uppercase tracking-[0.3em] italic opacity-40">Khu vực dữ liệu trống</p>
                 <p className="text-[10px] mt-2 font-bold text-slate-400 uppercase">Tải lên hoặc tạo thư mục mới trên Nextcloud</p>
@@ -351,11 +380,7 @@ const FilePortal: React.FC = () => {
 };
 
 const SidebarBtn = ({ icon, label, active, onClick }: { icon: any, label: string, active?: boolean, onClick?: () => void }) => (
-  <button onClick={onClick} className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all border ${active ? 'bg-white border-slate-200 text-indigo-600 shadow-sm font-black' : 'border-transparent text-slate-400 hover:bg-white/60 hover:text-slate-900'}`}><span className={active ? 'text-indigo-600 transition-transform' : 'text-slate-300'}>{icon}</span><span className="text-[11px] font-black uppercase tracking-widest">{label}</span></button>
-);
-
-const ToggleItem = ({ label, enabled }: { label: string, enabled: boolean }) => (
-  <div className="flex items-center justify-between"><span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</span><button className={`w-10 h-5 rounded-full relative transition-all ${enabled ? 'bg-indigo-600' : 'bg-slate-200'}`}><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${enabled ? 'left-6' : 'left-1'}`}></div></button></div>
+  <button onClick={onClick} className={`shrink-0 lg:w-full flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-4 rounded-xl sm:rounded-2xl transition-all border ${active ? 'bg-white border-slate-200 text-indigo-600 shadow-sm font-black' : 'border-transparent text-slate-400 hover:bg-white/60 hover:text-slate-900'}`}><span className={active ? 'text-indigo-600 transition-transform' : 'text-slate-300'}>{icon}</span><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">{label}</span></button>
 );
 
 export default FilePortal;

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Mail, Shield, FileText, Users, Settings, Database, PieChart, Bell, Search, LogOut,
   ChevronRight, Menu, X, Layers, Archive, Cloud, Globe, LayoutDashboard,
-  ShieldAlert, UserCircle, ClipboardList, Languages, LockKeyhole, HardDrive, AlertTriangle, Check, ShieldCheck, Building2
+  ShieldAlert, UserCircle, ClipboardList, Languages, LockKeyhole, HardDrive, AlertTriangle, Check, ShieldCheck, Building2, RefreshCw
 } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './LanguageContext.tsx';
 import UserDashboard from './views/UserDashboard.tsx';
@@ -44,7 +44,8 @@ const DEFAULT_SYSTEM_DATA = {
     enforceNextcloud: true,
     autoLogout: 30,
     adminMfa: true
-  }
+  },
+  active_sessions: []
 };
 
 type Page = 'DASHBOARD' | 'INBOX' | 'APPROVALS' | 'REQUESTS' | 'USERS' | 'DEPARTMENTS' | 'ROLES' | 'POLICIES' | 'SYSTEM' | 'ARCHIVE' | 'PROFILE';
@@ -53,22 +54,66 @@ const AppContent: React.FC = () => {
   const { t } = useLanguage();
   const [user, setUser] = useState<any>(null);
   const [activePage, setActivePage] = useState<Page>('DASHBOARD');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 1024);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'USER' | 'ADMIN'>('USER');
 
   const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [isDiskConnected, setIsDiskConnected] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Responsive: Close sidebar on route change for mobile
+  useEffect(() => {
+    if (window.innerWidth < 1024) {
+      setSidebarOpen(false);
+    }
+  }, [activePage]);
+
+  // Handle resize for sidebar
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 1024) {
+        setSidebarOpen(true);
+      } else {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const syncToDisk = useCallback(async (data: any) => {
     if (!dirHandle) return;
     try {
+      setIsSyncing(true);
       const fileHandle = await dirHandle.getFileHandle(DB_FILE_NAME, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(JSON.stringify(data, null, 2));
       await writable.close();
+      setTimeout(() => setIsSyncing(false), 500);
     } catch (err) {
       console.error('❌ Lỗi ghi file vật lý:', err);
+      setIsSyncing(false);
+    }
+  }, [dirHandle]);
+
+  const refreshFromDisk = useCallback(async () => {
+    if (!dirHandle) return;
+    try {
+      setIsSyncing(true);
+      const fileHandle = await dirHandle.getFileHandle(DB_FILE_NAME);
+      const file = await fileHandle.getFile();
+      const content = await file.text();
+      if (content) {
+        const diskData = JSON.parse(content);
+        localStorage.setItem('hdh_master_db_cache', JSON.stringify(diskData));
+        window.dispatchEvent(new Event('storage_sync'));
+        return diskData;
+      }
+      setTimeout(() => setIsSyncing(false), 800);
+    } catch (err) {
+      console.error('❌ Lỗi đọc file vật lý:', err);
+      setIsSyncing(false);
     }
   }, [dirHandle]);
 
@@ -77,17 +122,28 @@ const AppContent: React.FC = () => {
       const handle = await (window as any).showDirectoryPicker();
       setDirHandle(handle);
       setIsDiskConnected(true);
+      
       try {
         const fileHandle = await handle.getFileHandle(DB_FILE_NAME);
         const file = await fileHandle.getFile();
         const diskData = JSON.parse(await file.text());
         localStorage.setItem('hdh_master_db_cache', JSON.stringify(diskData));
+        window.dispatchEvent(new Event('storage_sync'));
       } catch (e) {
-        await syncToDisk(DEFAULT_SYSTEM_DATA);
-        localStorage.setItem('hdh_master_db_cache', JSON.stringify(DEFAULT_SYSTEM_DATA));
+        const currentCache = localStorage.getItem('hdh_master_db_cache');
+        const dataToSave = currentCache ? JSON.parse(currentCache) : DEFAULT_SYSTEM_DATA;
+        
+        const fileHandle = await handle.getFileHandle(DB_FILE_NAME, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(dataToSave, null, 2));
+        await writable.close();
+        
+        if (!currentCache) {
+          localStorage.setItem('hdh_master_db_cache', JSON.stringify(DEFAULT_SYSTEM_DATA));
+        }
       }
     } catch (err) {
-      console.error('Kết nối ổ cứng thất bại');
+      console.error('Kết nối ổ cứng thất bại hoặc bị hủy');
     }
   };
 
@@ -95,18 +151,19 @@ const AppContent: React.FC = () => {
     if (!isDiskConnected) return;
     const handleGlobalUpdate = () => {
       const cache = localStorage.getItem('hdh_master_db_cache');
-      if (cache) syncToDisk(JSON.parse(cache));
-      
-      // Cập nhật lại state user nếu thông tin trong DB thay đổi (ví dụ: avatar)
-      const savedSession = localStorage.getItem('hdh_current_session');
-      if (savedSession) {
-        const currentSession = JSON.parse(savedSession);
-        const db = JSON.parse(cache || '{}');
-        const dbUser = db.users?.find((u: any) => u.username === currentSession.username);
-        if (dbUser && dbUser.avatar !== currentSession.avatar) {
-          const updatedSession = { ...currentSession, avatar: dbUser.avatar };
-          localStorage.setItem('hdh_current_session', JSON.stringify(updatedSession));
-          setUser(updatedSession);
+      if (cache) {
+        const parsedData = JSON.parse(cache);
+        syncToDisk(parsedData);
+        
+        const savedSession = localStorage.getItem('hdh_current_session');
+        if (savedSession) {
+          const currentSession = JSON.parse(savedSession);
+          const dbUser = parsedData.users?.find((u: any) => u.username === currentSession.username);
+          if (dbUser && (dbUser.avatar !== currentSession.avatar || dbUser.name !== currentSession.name)) {
+            const updatedSession = { ...currentSession, avatar: dbUser.avatar, name: dbUser.name };
+            localStorage.setItem('hdh_current_session', JSON.stringify(updatedSession));
+            setUser(updatedSession);
+          }
         }
       }
     };
@@ -120,6 +177,10 @@ const AppContent: React.FC = () => {
       const parsed = JSON.parse(savedSession);
       setUser(parsed);
       setViewMode(parsed.role === 'ADMIN' ? 'ADMIN' : 'USER');
+    }
+    
+    if (!localStorage.getItem('hdh_master_db_cache')) {
+      localStorage.setItem('hdh_master_db_cache', JSON.stringify(DEFAULT_SYSTEM_DATA));
     }
   }, []);
 
@@ -145,7 +206,13 @@ const AppContent: React.FC = () => {
   };
 
   if (!user) {
-    return <Login onLogin={handleLogin} />;
+    return (
+      <Login 
+        onLogin={handleLogin} 
+        onConnect={connectToPhysicalDisk} 
+        isDiskConnected={isDiskConnected} 
+      />
+    );
   }
 
   const adminOnlyPages: Page[] = ['USERS', 'DEPARTMENTS', 'ROLES', 'POLICIES', 'SYSTEM'];
@@ -154,9 +221,17 @@ const AppContent: React.FC = () => {
 
   return (
     <div className={`flex h-screen overflow-hidden ${viewMode === 'ADMIN' ? 'bg-slate-100/50' : 'bg-slate-50'}`}>
-      <aside className={`transition-all duration-300 flex flex-col z-20 shadow-2xl ${
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-30 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        ></div>
+      )}
+
+      <aside className={`fixed lg:static inset-y-0 left-0 transition-all duration-300 flex flex-col z-40 shadow-2xl ${
         viewMode === 'ADMIN' ? 'bg-slate-950 text-slate-300' : 'bg-slate-900 text-slate-300'
-      } ${sidebarOpen ? 'w-64' : 'w-20'}`}>
+      } ${sidebarOpen ? 'w-64 translate-x-0' : 'w-20 -translate-x-full lg:translate-x-0'}`}>
         <div className="p-4 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3 font-bold text-white text-lg overflow-hidden">
             <div className={`${viewMode === 'ADMIN' ? 'bg-rose-600' : 'bg-indigo-600'} p-1.5 rounded-lg shadow-lg shrink-0`}>
@@ -164,6 +239,11 @@ const AppContent: React.FC = () => {
             </div>
             {sidebarOpen && <span className="tracking-tighter text-2xl font-black italic uppercase">hdh</span>}
           </div>
+          {sidebarOpen && (
+            <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-2 text-slate-400 hover:text-white">
+              <X size={20} />
+            </button>
+          )}
         </div>
         <nav className="flex-1 mt-6 px-3 space-y-1 overflow-y-auto">
           {viewMode === 'USER' ? (
@@ -193,63 +273,98 @@ const AppContent: React.FC = () => {
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-10 sticky top-0 z-10 shadow-sm">
-          <div className="flex items-center gap-6">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2.5 hover:bg-slate-100 rounded-2xl text-slate-500 transition-all border border-transparent hover:border-slate-200">
+        <header className="h-16 lg:h-20 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-10 sticky top-0 z-10 shadow-sm">
+          <div className="flex items-center gap-4 lg:gap-6">
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 lg:p-2.5 hover:bg-slate-100 rounded-2xl text-slate-500 transition-all border border-transparent hover:border-slate-200">
               <Menu size={22} />
             </button>
             <div className="flex flex-col">
-              <h1 className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-400 italic mb-1">On-Premise Infrastructure</h1>
+              <h1 className="text-[8px] lg:text-[9px] font-black uppercase tracking-[0.2em] lg:tracking-[0.3em] text-slate-400 italic mb-1">On-Premise Infrastructure</h1>
               {!isDiskConnected ? (
-                <button onClick={connectToPhysicalDisk} className="flex items-center gap-2 text-rose-600 font-black text-[10px] uppercase tracking-widest animate-pulse">
-                  <AlertTriangle size={14} /> Chưa kết nối ổ cứng vật lý
+                <button onClick={connectToPhysicalDisk} className="flex items-center gap-2 text-rose-600 font-black text-[9px] lg:text-[10px] uppercase tracking-widest group">
+                  <div className="flex items-center gap-2 animate-pulse bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100 group-hover:bg-rose-600 group-hover:text-white transition-all">
+                    <AlertTriangle size={12} className="lg:size-[14px]" /> <span className="hidden sm:inline">Isolated Mode (Chưa kết nối Disk)</span> <span className="sm:hidden">No Disk</span>
+                  </div>
                 </button>
               ) : (
-                <div className="flex items-center gap-2 text-emerald-600 font-black text-[10px] uppercase tracking-widest">
-                  <HardDrive size={14} /> Database: hdh_master_db.json (Live)
+                <div className="flex items-center gap-2 lg:gap-4">
+                  <div className="flex items-center gap-2 text-emerald-600 font-black text-[9px] lg:text-[10px] uppercase tracking-widest">
+                    <HardDrive size={12} className="lg:size-[14px]" /> <span className="hidden sm:inline">Master DB: Live Sync</span> <span className="sm:hidden">Live</span>
+                  </div>
+                  <button 
+                    onClick={refreshFromDisk}
+                    className={`p-1 lg:p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 transition-all ${isSyncing ? 'animate-spin text-indigo-600 bg-indigo-50' : ''}`}
+                    title="Làm mới dữ liệu từ ổ cứng"
+                  >
+                    <RefreshCw size={12} className="lg:size-[14px]" />
+                  </button>
                 </div>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-4 group cursor-pointer" onClick={() => navigate('PROFILE')}>
-              <div className="text-right hidden md:block">
-                <div className="text-sm font-black text-slate-900 leading-tight uppercase italic">{user.name}</div>
-                <div className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${viewMode === 'ADMIN' ? 'text-rose-600' : 'text-slate-400'}`}>
-                  {user.role} Access
+          <div className="flex items-center gap-4 lg:gap-6">
+            <div className="flex items-center gap-3 lg:gap-4 group cursor-pointer" onClick={() => navigate('PROFILE')}>
+              <div className="text-right hidden sm:block">
+                <div className="text-xs lg:text-sm font-black text-slate-900 leading-tight uppercase italic truncate max-w-[120px]">{user.name}</div>
+                <div className={`text-[8px] lg:text-[9px] font-black uppercase tracking-widest mt-0.5 ${viewMode === 'ADMIN' ? 'text-rose-600' : 'text-slate-400'}`}>
+                  {user.role}
                 </div>
               </div>
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white shadow-xl overflow-hidden border-2 border-white ${viewMode === 'ADMIN' ? 'bg-rose-600' : 'bg-indigo-600'}`}>
+              <div className={`w-10 h-10 lg:w-12 lg:h-12 rounded-2xl flex items-center justify-center font-bold text-white shadow-xl overflow-hidden border-2 border-white shrink-0 ${viewMode === 'ADMIN' ? 'bg-rose-600' : 'bg-indigo-600'}`}>
                 {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : user.name.charAt(0)}
               </div>
             </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-10 bg-slate-50/50">
-          {safeActivePage === 'INBOX' ? (
-            <MailInbox currentUser={user} />
-          ) : safeActivePage === 'SYSTEM' ? (
-            <SystemMonitor isDiskConnected={isDiskConnected} onConnect={connectToPhysicalDisk} />
-          ) : safeActivePage === 'DASHBOARD' ? (
-            viewMode === 'USER' ? <UserDashboard currentUser={user} onNavigate={navigate} /> : <AdminDashboard onNavigate={navigate} />
-          ) : safeActivePage === 'USERS' ? (
-            <UserManagement />
-          ) : safeActivePage === 'DEPARTMENTS' ? (
-            <DepartmentManagement />
-          ) : safeActivePage === 'ROLES' ? (
-            <RolesPermissions />
-          ) : safeActivePage === 'PROFILE' ? (
-            <UserProfile user={user} />
-          ) : safeActivePage === 'ARCHIVE' ? (
-            <FilePortal />
-          ) : safeActivePage === 'APPROVALS' ? (
-            <ApprovalList currentUser={user} onViewRequest={(id) => navigate('REQUESTS', id)} />
-          ) : safeActivePage === 'REQUESTS' && selectedRequestId ? (
-            <RequestDetail id={selectedRequestId} currentUser={user} onBack={() => navigate('APPROVALS')} />
-          ) : safeActivePage === 'POLICIES' ? (
-            <SecurityPolicy />
-          ) : null}
+        <div className="flex-1 overflow-y-auto p-4 lg:p-10 bg-slate-50/50">
+          {!isDiskConnected && (
+            <div className="mb-6 lg:mb-8 p-4 lg:p-6 bg-white border-2 border-rose-100 rounded-[1.5rem] lg:rounded-[2rem] shadow-xl shadow-rose-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 lg:gap-6 animate-fadeIn">
+              <div className="flex items-center gap-4 lg:gap-5">
+                <div className="p-3 lg:p-4 bg-rose-50 text-rose-600 rounded-2xl shrink-0">
+                  <ShieldAlert size={24} className="lg:size-[32px]" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-xs lg:text-sm uppercase tracking-widest italic leading-tight">Cảnh báo: Chế độ Lưu trữ Cô lập</h3>
+                  <p className="text-[10px] lg:text-xs text-slate-500 font-medium leading-relaxed max-w-2xl mt-1">
+                    Hệ thống đang lưu dữ liệu tạm thời. Để đồng bộ dữ liệu với máy tính khác, bạn **bắt buộc** phải kết nối với cùng một thư mục vật lý.
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={connectToPhysicalDisk}
+                className="w-full sm:w-auto px-6 lg:px-8 py-2.5 lg:py-3 bg-rose-600 text-white rounded-xl font-black text-[9px] lg:text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-rose-100 hover:bg-rose-700 transition-all active:scale-95 shrink-0"
+              >
+                Kết nối ngay
+              </button>
+            </div>
+          )}
+
+          <div className="max-w-[1600px] mx-auto">
+            {safeActivePage === 'INBOX' ? (
+              <MailInbox currentUser={user} />
+            ) : safeActivePage === 'SYSTEM' ? (
+              <SystemMonitor isDiskConnected={isDiskConnected} onConnect={connectToPhysicalDisk} />
+            ) : safeActivePage === 'DASHBOARD' ? (
+              viewMode === 'USER' ? <UserDashboard currentUser={user} onNavigate={navigate} /> : <AdminDashboard onNavigate={navigate} />
+            ) : safeActivePage === 'USERS' ? (
+              <UserManagement />
+            ) : safeActivePage === 'DEPARTMENTS' ? (
+              <DepartmentManagement />
+            ) : safeActivePage === 'ROLES' ? (
+              <RolesPermissions />
+            ) : safeActivePage === 'PROFILE' ? (
+              <UserProfile user={user} />
+            ) : safeActivePage === 'ARCHIVE' ? (
+              <FilePortal />
+            ) : safeActivePage === 'APPROVALS' ? (
+              <ApprovalList currentUser={user} onViewRequest={(id) => navigate('REQUESTS', id)} />
+            ) : safeActivePage === 'REQUESTS' && selectedRequestId ? (
+              <RequestDetail id={selectedRequestId} currentUser={user} onBack={() => navigate('APPROVALS')} />
+            ) : safeActivePage === 'POLICIES' ? (
+              <SecurityPolicy />
+            ) : null}
+          </div>
         </div>
       </main>
     </div>

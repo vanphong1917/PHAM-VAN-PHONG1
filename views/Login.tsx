@@ -1,15 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
-import { Mail, Lock, Shield, Layers, ArrowRight, AlertCircle, ChevronLeft, CheckCircle2, User as UserIcon, Smartphone, Key } from 'lucide-react';
+import { Mail, Lock, Shield, Layers, ArrowRight, AlertCircle, ChevronLeft, CheckCircle2, User as UserIcon, Smartphone, Key, HardDrive, RefreshCw } from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
 
 interface LoginProps {
   onLogin: (user: any, rememberMe: boolean) => void;
+  onConnect?: () => void;
+  isDiskConnected?: boolean;
 }
 
 type LoginView = 'LOGIN' | 'MFA_CHALLENGE' | 'FORGOT_PASSWORD' | 'RESET_SUCCESS';
 
-const Login: React.FC<LoginProps> = ({ onLogin }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, onConnect, isDiskConnected }) => {
   const { t, locale, setLocale } = useLanguage();
   const [view, setView] = useState<LoginView>('LOGIN');
   const [identifier, setIdentifier] = useState('');
@@ -25,6 +27,16 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     return cache ? JSON.parse(cache) : null;
   });
 
+  // Tự động cập nhật DB state khi Master DB thay đổi (ví dụ: sau khi kết nối disk thành công)
+  useEffect(() => {
+    const handleSync = () => {
+      const cache = localStorage.getItem('hdh_master_db_cache');
+      if (cache) setDb(JSON.parse(cache));
+    };
+    window.addEventListener('storage_sync', handleSync);
+    return () => window.removeEventListener('storage_sync', handleSync);
+  }, []);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -32,7 +44,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     if (view === 'LOGIN') {
       setTimeout(() => {
-        // Lấy danh sách user thực tế từ Master DB Cache (Ổ cứng vật lý)
+        // Lấy danh sách user thực tế từ Master DB Cache (Đồng bộ từ hdh_master_db.json)
         const cache = localStorage.getItem('hdh_master_db_cache');
         const currentDb = cache ? JSON.parse(cache) : { users: [] };
         const savedUsers = currentDb.users || [];
@@ -98,7 +110,41 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
+      <div className="max-w-md w-full space-y-4">
+        
+        {/* Widget LAN Sync Connection - Rất quan trọng để khắc phục lỗi không đồng bộ giữa các trình duyệt/máy tính */}
+        <div className={`p-4 rounded-[1.5rem] border shadow-sm transition-all animate-fadeIn ${
+          isDiskConnected ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-rose-50 border-rose-100 text-rose-700'
+        }`}>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-xl bg-white shadow-sm`}>
+                <HardDrive size={18} className={!isDiskConnected ? 'animate-pulse' : ''} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest leading-none">
+                  {isDiskConnected ? 'LAN Sync Active' : 'Offline / Isolated'}
+                </p>
+                <p className="text-[9px] font-bold mt-1 opacity-70 truncate italic">
+                  {isDiskConnected ? 'Master DB: hdh_master_db.json connected' : 'Database chưa được liên kết với mạng LAN'}
+                </p>
+              </div>
+            </div>
+            {!isDiskConnected ? (
+              <button 
+                onClick={onConnect}
+                className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-lg hover:bg-rose-700 active:scale-95 transition-all"
+              >
+                Kết nối LAN
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-600">
+                <CheckCircle2 size={12} /> Live
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="bg-white rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden text-slate-700">
           
           {/* Header */}
@@ -218,7 +264,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               <div className="space-y-5 animate-fadeIn">
                 {error && (
                   <div className="bg-rose-50 border border-rose-100 text-rose-700 p-4 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-3 animate-shake">
-                    <AlertCircle size={16} /> Sai thông tin đăng nhập
+                    <AlertCircle size={16} /> Sai thông tin đăng nhập hoặc Database chưa đồng bộ
                   </div>
                 )}
 
@@ -277,6 +323,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 >
                   {isLoading ? "Đang xác thực..." : "Đăng nhập hệ thống"}
                 </button>
+
+                {!isDiskConnected && (
+                  <p className="text-[9px] text-slate-400 text-center font-bold italic leading-relaxed px-4">
+                    Lưu ý: Nếu bạn vừa tạo tài khoản ở trình duyệt khác, hãy nhấn "Kết nối LAN" và chọn thư mục dữ liệu hdh để đồng bộ trước khi đăng nhập.
+                  </p>
+                )}
               </div>
             )}
           </form>
