@@ -35,19 +35,16 @@ const FilePortal: React.FC = () => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Lấy dữ liệu từ Master DB Cache để đồng bộ với các module khác
   const [db, setDb] = useState<any>(() => {
     const cache = localStorage.getItem('hdh_master_db_cache');
     return cache ? JSON.parse(cache) : { user_storages: {} };
   });
 
-  // Lấy user hiện tại từ session
   const currentUser = useMemo(() => {
     const session = localStorage.getItem('hdh_current_session');
     return session ? JSON.parse(session) : null;
   }, []);
 
-  // Lấy danh sách files từ phân vùng của user
   const files: FileItem[] = useMemo(() => {
     if (!currentUser || !db.user_storages[currentUser.username]) return [];
     return db.user_storages[currentUser.username].files || [];
@@ -84,7 +81,7 @@ const FilePortal: React.FC = () => {
   }, [files, currentFolderId, searchQuery, activeTab]);
 
   const breadcrumbs = useMemo(() => {
-    const list: { id: string | null; name: string }[] = [{ id: null, name: 'Tệp tin của tôi' }];
+    const list: { id: string | null; name: string }[] = [{ id: null, name: 'Nextcloud Files' }];
     if (activeTab !== 'ALL') {
       list[0].name = activeTab === 'RECENT' ? 'Gần đây' : activeTab === 'STARRED' ? 'Đã đánh dấu' : activeTab === 'SHARED' ? 'Đã chia sẻ' : 'Thùng rác';
       return list;
@@ -156,7 +153,7 @@ const FilePortal: React.FC = () => {
       return;
     }
     if (!file.data) {
-      alert("Tệp tin này không có dữ liệu thực tế (Dữ liệu mẫu).");
+      alert("Tệp tin này không có dữ liệu thực tế.");
       return;
     }
     const newWindow = window.open();
@@ -167,10 +164,7 @@ const FilePortal: React.FC = () => {
   };
 
   const handleDownloadFile = (file: FileItem) => {
-    if (!file.data) {
-      alert("Không thể tải xuống tệp tin mẫu.");
-      return;
-    }
+    if (!file.data) return;
     const link = document.createElement('a');
     link.href = file.data;
     link.download = file.name;
@@ -193,7 +187,7 @@ const FilePortal: React.FC = () => {
   };
 
   const deletePermanently = (id: string) => {
-    if (confirm("Xóa vĩnh viễn tệp này khỏi ổ cứng?")) {
+    if (confirm("Xóa vĩnh viễn tệp này khỏi Nextcloud Node?")) {
       saveFilesToDb(files.filter(f => f.id !== id));
     }
   };
@@ -215,9 +209,9 @@ const FilePortal: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-            <Cloud className="text-indigo-600" size={28} /> {t('filePortal')}
+            <Cloud className="text-indigo-600" size={28} /> {t('filePortal')} (Nextcloud)
           </h2>
-          <p className="text-slate-500 text-sm italic">Hệ thống Nextcloud On-premise (Bare-metal storage cluster).</p>
+          <p className="text-slate-500 text-sm italic">Hệ thống đồng bộ dữ liệu tệp lớn qua bare-metal cluster.</p>
         </div>
         <div className="flex items-center gap-3">
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
@@ -243,10 +237,10 @@ const FilePortal: React.FC = () => {
 
           <div className="mt-auto p-6 bg-slate-900 rounded-[2rem] text-white shadow-2xl relative overflow-hidden group">
             <div className="relative z-10">
-              <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-4">Hạn ngạch Disk</h4>
-              <div className="flex justify-between text-xs font-bold mb-2"><span>1.4 GB</span><span className="text-slate-500">20 GB</span></div>
-              <div className="w-full bg-white/10 h-2 rounded-full mb-4"><div className="bg-indigo-400 h-full rounded-full transition-all duration-1000" style={{ width: '7%' }}></div></div>
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Hiệu năng: High (NVMe Gen4)</p>
+              <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-4">Storage Quota</h4>
+              <div className="flex justify-between text-xs font-bold mb-2"><span>1.2 GB</span><span className="text-slate-500">20 GB</span></div>
+              <div className="w-full bg-white/10 h-2 rounded-full mb-4"><div className="bg-indigo-400 h-full rounded-full transition-all duration-1000" style={{ width: '6%' }}></div></div>
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Hiệu năng: bare-metal NVMe</p>
             </div>
             <HardDrive size={100} className="absolute -bottom-6 -right-6 text-white/5 rotate-12 group-hover:scale-110 transition-transform duration-500" />
           </div>
@@ -322,7 +316,7 @@ const FilePortal: React.FC = () => {
               <div className="p-32 text-center text-slate-300 flex flex-col items-center animate-fadeIn">
                 <div className="p-10 bg-slate-50 rounded-[3rem] mb-6"><Folder size={80} className="opacity-10" /></div>
                 <p className="font-black text-xs uppercase tracking-[0.3em] italic opacity-40">Khu vực dữ liệu trống</p>
-                <p className="text-[10px] mt-2 font-bold text-slate-400 uppercase">Tải lên hoặc tạo thư mục mới để bắt đầu</p>
+                <p className="text-[10px] mt-2 font-bold text-slate-400 uppercase">Tải lên hoặc tạo thư mục mới trên Nextcloud</p>
               </div>
             )}
           </div>
@@ -333,7 +327,7 @@ const FilePortal: React.FC = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl border border-white/10 overflow-hidden animate-scaleUp">
             <div className="px-10 py-8 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-black text-slate-900 uppercase tracking-[0.2em] text-sm italic">New Infrastructure Node</h3>
+              <h3 className="font-black text-slate-900 uppercase tracking-[0.2em] text-sm italic">New Nextcloud Folder</h3>
               <button onClick={() => setIsCreateFolderOpen(false)} className="p-2 hover:bg-white rounded-2xl transition-all"><X size={24} /></button>
             </div>
             <form onSubmit={handleCreateFolder} className="p-10 space-y-8">
@@ -341,7 +335,7 @@ const FilePortal: React.FC = () => {
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tên thư mục</label>
                 <div className="relative group">
                   <Folder className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-500" size={20} />
-                  <input autoFocus type="text" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="VD: Tài liệu kỹ thuật Site A..." className="w-full pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-100 font-bold text-sm" />
+                  <input autoFocus type="text" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Tên thư mục mới..." className="w-full pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-100 font-bold text-sm" />
                 </div>
               </div>
               <div className="flex justify-end gap-4">
@@ -349,38 +343,6 @@ const FilePortal: React.FC = () => {
                 <button type="submit" className="px-10 py-3.5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-100 active:scale-95 transition-all">Tạo thư mục</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {showShareModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl border border-white/10 overflow-hidden animate-scaleUp">
-            <div className="px-10 py-8 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-black text-slate-900 uppercase tracking-[0.2em] text-sm italic">Secure Share Link</h3>
-              <button onClick={() => setShowShareModal(null)} className="p-2 hover:bg-white rounded-2xl transition-all"><X size={24} /></button>
-            </div>
-            <div className="p-10 space-y-8">
-              <div className="flex items-center gap-5 p-6 bg-indigo-50 border border-indigo-100 rounded-3xl">
-                <div className="p-4 bg-white rounded-2xl shadow-sm text-indigo-600">{getFileIcon(showShareModal.type)}</div>
-                <div>
-                  <p className="text-sm font-black text-slate-900 truncate max-w-[200px]">{showShareModal.name}</p>
-                  <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mt-1">Cổng chia sẻ nội bộ HDH</p>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Direct LAN/WAN link</label>
-                <div className="flex gap-2">
-                  <div className="flex-1 px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-[11px] font-mono font-bold text-indigo-600 truncate shadow-inner">https://nc.hdh.local/s/f7hA9kL2p9</div>
-                  <button onClick={() => { navigator.clipboard.writeText("https://nc.hdh.local/s/f7hA9kL2p9"); alert("Đã sao chép liên kết!"); }} className="p-4 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 active:scale-90"><LinkIcon size={20} /></button>
-                </div>
-              </div>
-              <div className="p-6 bg-slate-50 rounded-3xl space-y-5 border border-slate-100">
-                <ToggleItem label="Cho phép chỉnh sửa" enabled={false} />
-                <ToggleItem label="Đặt mã PIN truy cập" enabled={true} />
-              </div>
-              <button onClick={() => setShowShareModal(null)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-2xl active:scale-95">Xác nhận chia sẻ</button>
-            </div>
           </div>
         </div>
       )}

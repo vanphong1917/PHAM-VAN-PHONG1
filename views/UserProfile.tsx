@@ -18,14 +18,14 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   
-  // Khởi tạo state từ dữ liệu thực tế trong DB
   const [localUserData, setLocalUserData] = useState<any>(null);
 
   const isAdmin = user.role === 'ADMIN';
 
   useEffect(() => {
-    const allUsers = JSON.parse(localStorage.getItem('hdh_portal_users') || '[]');
-    const currentUser = allUsers.find((u: any) => u.username === user.username);
+    const cache = localStorage.getItem('hdh_master_db_cache');
+    const db = cache ? JSON.parse(cache) : { users: [] };
+    const currentUser = db.users?.find((u: any) => u.username === user.username);
     if (currentUser) {
       setLocalUserData(currentUser);
     } else {
@@ -56,21 +56,30 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
       reader.onloadend = () => {
         const base64Avatar = reader.result as string;
         
-        // LƯU THỰC: Cập nhật vào DB tổng
-        const allUsers = JSON.parse(localStorage.getItem('hdh_portal_users') || '[]');
-        const updatedUsers = allUsers.map((u: any) => 
-          u.username === localUserData.username ? { ...u, avatar: base64Avatar } : u
-        );
-        localStorage.setItem('hdh_portal_users', JSON.stringify(updatedUsers));
+        // Cập nhật Master DB Cache
+        const cache = localStorage.getItem('hdh_master_db_cache');
+        if (cache) {
+          const db = JSON.parse(cache);
+          db.users = db.users.map((u: any) => 
+            u.username === localUserData.username ? { ...u, avatar: base64Avatar } : u
+          );
+          localStorage.setItem('hdh_master_db_cache', JSON.stringify(db));
+        }
 
-        // Cập nhật session hiện tại
+        // Cập nhật session hiện tại để các thành phần UI (Header) nhận biết ngay
         const session = JSON.parse(localStorage.getItem('hdh_current_session') || '{}');
         if (session.username === localUserData.username) {
-          localStorage.setItem('hdh_current_session', JSON.stringify({ ...session, avatar: base64Avatar }));
+          const updatedSession = { ...session, avatar: base64Avatar };
+          localStorage.setItem('hdh_current_session', JSON.stringify(updatedSession));
         }
 
         setLocalUserData({ ...localUserData, avatar: base64Avatar });
-        window.dispatchEvent(new Event('storage'));
+        
+        // Phát tín hiệu đồng bộ để App.tsx cập nhật Header
+        window.dispatchEvent(new Event('storage_sync'));
+        
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 3000);
       };
       reader.readAsDataURL(file);
     }
@@ -81,7 +90,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
     setIsSaving(true);
 
     setTimeout(() => {
-      // Chỉ Admin mới được xử lý logic đổi mật khẩu ở đây
+      // Logic đổi mật khẩu chỉ dành cho Admin
       if (isAdmin && formData.newPassword) {
         if (formData.newPassword !== formData.confirmPassword) {
           alert("Mật khẩu xác nhận không khớp");
@@ -89,14 +98,17 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
           return;
         }
         
-        const allUsers = JSON.parse(localStorage.getItem('hdh_portal_users') || '[]');
-        const updatedUsers = allUsers.map((u: any) => 
-          u.username === localUserData.username ? { ...u, password: formData.newPassword } : u
-        );
-        localStorage.setItem('hdh_portal_users', JSON.stringify(updatedUsers));
+        const cache = localStorage.getItem('hdh_master_db_cache');
+        if (cache) {
+          const db = JSON.parse(cache);
+          db.users = db.users.map((u: any) => 
+            u.username === localUserData.username ? { ...u, password: formData.newPassword } : u
+          );
+          localStorage.setItem('hdh_master_db_cache', JSON.stringify(db));
+        }
       }
 
-      // Lưu các settings thông báo (User vẫn được quyền chỉnh sửa cái này)
+      // Lưu các settings thông báo
       const settings = {
         notifyEmail: formData.notifyEmail,
         notifyBrowser: formData.notifyBrowser,
@@ -107,11 +119,12 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
 
       setIsSaving(false);
       setShowSuccess(true);
+      window.dispatchEvent(new Event('storage_sync'));
       setTimeout(() => setShowSuccess(false), 3000);
     }, 1200);
   };
 
-  const currentAvatar = localUserData.avatar || `https://picsum.photos/seed/${localUserData.name}/120/120`;
+  const currentAvatar = localUserData.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${localUserData.username}`;
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-fadeIn pb-12">
@@ -126,7 +139,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
         {showSuccess && (
           <div className="flex items-center gap-2 text-emerald-600 text-sm font-bold animate-scaleUp bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100">
             <CheckCircle2 size={18} />
-            Đã đồng bộ dữ liệu vào ổ cứng
+            Đã đồng bộ dữ liệu vào hệ thống
           </div>
         )}
       </div>
@@ -188,11 +201,6 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
               <p className="text-[10px] text-slate-500 leading-relaxed italic font-medium">
                 * Mã xác thực 2 lớp (MFA) được đồng bộ hóa với hệ thống AD nội bộ để bảo vệ các thao tác hạ tầng.
               </p>
-              {isAdmin && (
-                <button className="w-full py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/10">
-                  Lấy lại mã phục hồi
-                </button>
-              )}
             </div>
             <Lock size={120} className="absolute -bottom-10 -right-10 text-white/5 rotate-12 group-hover:scale-110 transition-transform duration-700" />
           </div>
@@ -202,7 +210,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
         <div className="lg:col-span-8">
           <form onSubmit={handleSaveSettings} className="space-y-8">
             
-            {/* Password Section - CHỈ HIỂN THỊ VỚI ADMIN */}
+            {/* Password Section - CHỈ HIỂN THỊ VỚI ADMIN HOẶC HIỂN THỊ CẢNH BÁO CHO USER */}
             {isAdmin ? (
               <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden animate-fadeIn">
                 <div className="px-10 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center gap-4">
@@ -234,7 +242,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
                           value={formData.newPassword}
                           onChange={(e) => setFormData({...formData, newPassword: e.target.value})}
                           className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-50 transition-all text-sm font-bold" 
-                          placeholder="Tối thiểu 8 ký tự"
+                          placeholder="Tối thiểu 12 ký tự"
                         />
                       </div>
                     </div>
@@ -321,7 +329,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ user }) => {
                 className="flex items-center gap-3 px-10 py-4 bg-indigo-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-70 active:scale-95"
               >
                 {isSaving ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <Save size={18} />}
-                Lưu dữ liệu vào ổ cứng
+                Ghi dữ liệu vào ổ cứng
               </button>
             </div>
           </form>

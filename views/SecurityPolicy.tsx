@@ -21,10 +21,11 @@ const SecurityPolicy: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  // Initialize from localStorage
+  // Initialize from master cache
   const [policies, setPolicies] = useState(() => {
-    const saved = localStorage.getItem('hdh_portal_policies');
-    return saved ? JSON.parse(saved) : DEFAULT_POLICIES;
+    const cache = localStorage.getItem('hdh_master_db_cache');
+    const db = cache ? JSON.parse(cache) : {};
+    return db.policies || DEFAULT_POLICIES;
   });
 
   const handleToggle = (key: keyof typeof policies) => {
@@ -37,8 +38,15 @@ const SecurityPolicy: React.FC = () => {
 
   const handleSave = () => {
     setIsSaving(true);
-    // Persist to "disk" (localStorage)
-    localStorage.setItem('hdh_portal_policies', JSON.stringify(policies));
+    
+    // Cập nhật vào Master DB Cache
+    const cache = localStorage.getItem('hdh_master_db_cache');
+    if (cache) {
+      const db = JSON.parse(cache);
+      db.policies = policies;
+      localStorage.setItem('hdh_master_db_cache', JSON.stringify(db));
+      window.dispatchEvent(new Event('storage_sync'));
+    }
     
     setTimeout(() => {
       setIsSaving(false);
@@ -48,17 +56,19 @@ const SecurityPolicy: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fadeIn">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">{t('securityTitle')}</h2>
-          <p className="text-slate-500 text-sm">Quản lý cấu hình bảo mật On-Premise (Dữ liệu đã được đồng bộ với ổ cứng mô phỏng)</p>
+          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+             <Shield className="text-indigo-600" /> {t('securityTitle')}
+          </h2>
+          <p className="text-slate-500 text-sm">Quản lý cấu hình bảo mật On-Premise (Bare-metal Security Node).</p>
         </div>
         <div className="flex items-center gap-3">
           {showSuccess && (
             <div className="flex items-center gap-2 text-emerald-600 text-sm font-bold animate-scaleUp">
               <CheckCircle2 size={18} />
-              Đã lưu thay đổi vào hệ thống
+              Đã đồng bộ chính sách vào Master DB
             </div>
           )}
           <button 
@@ -71,23 +81,23 @@ const SecurityPolicy: React.FC = () => {
             ) : (
               <Save size={16} />
             )}
-            {t('save')}
+            Lưu chính sách bảo mật
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Password Policy */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+          <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <h3 className="font-black text-slate-800 text-[11px] uppercase tracking-widest flex items-center gap-2">
               <Key size={18} className="text-indigo-600" /> {t('passwordPolicy')}
             </h3>
             <button onClick={() => setShowValues(!showValues)} className="text-slate-400 hover:text-indigo-600">
               {showValues ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
-          <div className="p-6 space-y-6">
+          <div className="p-8 space-y-8">
             <PolicyControl 
               label={t('minPasswordLength')} 
               description="Số lượng ký tự tối thiểu yêu cầu cho mật khẩu người dùng"
@@ -112,13 +122,13 @@ const SecurityPolicy: React.FC = () => {
         </div>
 
         {/* Attachment & File Policy */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+          <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <h3 className="font-black text-slate-800 text-[11px] uppercase tracking-widest flex items-center gap-2">
               <FileWarning size={18} className="text-amber-600" /> {t('attachmentPolicyTitle')}
             </h3>
           </div>
-          <div className="p-6 space-y-6">
+          <div className="p-8 space-y-8">
             <PolicyControl 
               label={t('maxFileSize')} 
               description="Kích thước tối đa cho phép đính kèm trực tiếp trong Mail01"
@@ -132,21 +142,21 @@ const SecurityPolicy: React.FC = () => {
               enabled={policies.enforceNextcloud}
               onToggle={() => handleToggle('enforceNextcloud')}
             />
-            <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-3 text-amber-800 text-xs">
+            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3 text-amber-800 text-xs font-medium">
               <AlertCircle size={16} className="shrink-0 mt-0.5" />
-              <p>Chính sách này giúp duy trì hiệu năng ổ NVMe Index và tránh làm phình Database Mailbox.</p>
+              <p>Mọi tệp tin trên {policies.maxFileSize}MB sẽ được Nextcloud Cluster xử lý để tối ưu hiệu năng ổ NVMe Index.</p>
             </div>
           </div>
         </div>
 
         {/* MFA & Identification */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+          <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <h3 className="font-black text-slate-800 text-[11px] uppercase tracking-widest flex items-center gap-2">
               <Smartphone size={18} className="text-emerald-600" /> {t('mfaTitle')}
             </h3>
           </div>
-          <div className="p-6 space-y-6">
+          <div className="p-8 space-y-8">
             <ToggleControl 
               label="Yêu cầu MFA cho quản trị viên" 
               description="Bắt buộc sử dụng Authenticator app cho tài khoản Admin"
@@ -159,31 +169,31 @@ const SecurityPolicy: React.FC = () => {
               enabled={policies.lanMfa}
               onToggle={() => handleToggle('lanMfa')}
             />
-            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+            <div className="flex items-center justify-between p-5 bg-slate-50 rounded-[1.5rem] border border-slate-100 shadow-inner">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg">
-                  <Shield size={18} />
+                <div className="p-3 bg-emerald-100 text-emerald-600 rounded-xl shadow-sm">
+                  <Shield size={20} />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-slate-800">Tình trạng bảo mật</p>
-                  <p className="text-[10px] text-slate-500 font-medium">Cấp độ: {policies.adminMfa && policies.requireComplexity ? 'CAO - TUÂN THỦ' : 'TRUNG BÌNH'}</p>
+                  <p className="text-xs font-black text-slate-800 uppercase tracking-widest">Tình trạng bảo mật</p>
+                  <p className="text-[10px] text-slate-500 font-bold">Node: BARE-METAL-SEC-01</p>
                 </div>
               </div>
-              <div className="h-10 w-10 flex items-center justify-center border-4 border-emerald-500 border-t-transparent rounded-full font-bold text-[10px] text-emerald-600">
-                {policies.adminMfa && policies.requireComplexity && policies.enforceNextcloud ? '95%' : '65%'}
+              <div className="h-12 w-12 flex items-center justify-center border-4 border-emerald-500 border-t-transparent rounded-full font-black text-[10px] text-emerald-600 animate-spin-slow">
+                {policies.adminMfa && policies.requireComplexity ? '98%' : '65%'}
               </div>
             </div>
           </div>
         </div>
 
         {/* Session Management */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+          <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <h3 className="font-black text-slate-800 text-[11px] uppercase tracking-widest flex items-center gap-2">
               <Clock size={18} className="text-slate-600" /> {t('sessionPolicy')}
             </h3>
           </div>
-          <div className="p-6 space-y-6">
+          <div className="p-8 space-y-8">
             <PolicyControl 
               label={t('autoLogout')} 
               description="Thời gian không hoạt động trước khi phiên làm việc bị ngắt"
@@ -198,7 +208,7 @@ const SecurityPolicy: React.FC = () => {
               onChange={(val: number) => handleValueChange('deviceLimit', val)}
               unit="thiết bị"
             />
-            <div className="pt-4 flex items-center gap-2 text-xs font-bold text-indigo-600 cursor-pointer hover:underline uppercase tracking-widest">
+            <div className="pt-4 flex items-center gap-2 text-[10px] font-black text-indigo-600 cursor-pointer hover:underline uppercase tracking-widest">
               Xem tất cả các phiên đang hoạt động <Lock size={14} />
             </div>
           </div>
@@ -219,17 +229,17 @@ interface PolicyControlProps {
 const PolicyControl: React.FC<PolicyControlProps> = ({ label, description, value, unit, onChange }) => (
   <div className="flex items-start justify-between gap-6 group">
     <div className="flex-1">
-      <h4 className="text-sm font-bold text-slate-800 mb-1">{label}</h4>
-      <p className="text-xs text-slate-500 leading-relaxed">{description}</p>
+      <h4 className="text-sm font-black text-slate-800 mb-1 uppercase tracking-tight">{label}</h4>
+      <p className="text-xs text-slate-500 leading-relaxed font-medium">{description}</p>
     </div>
-    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 min-w-[110px] justify-between shadow-sm focus-within:ring-2 focus-within:ring-indigo-100 focus-within:border-indigo-300 transition-all">
+    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-w-[120px] justify-between shadow-inner focus-within:ring-4 focus-within:ring-indigo-50 transition-all">
       <input 
         type="number" 
         value={value} 
         onChange={(e) => onChange(parseInt(e.target.value) || 0)}
-        className="bg-transparent border-none outline-none text-sm font-bold text-slate-900 w-12 text-center"
+        className="bg-transparent border-none outline-none text-sm font-black text-slate-900 w-12 text-center"
       />
-      <span className="text-[10px] font-bold text-slate-400 uppercase">{unit}</span>
+      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{unit}</span>
     </div>
   </div>
 );
@@ -244,14 +254,14 @@ interface ToggleControlProps {
 const ToggleControl: React.FC<ToggleControlProps> = ({ label, description, enabled, onToggle }) => (
   <div className="flex items-start justify-between gap-6">
     <div className="flex-1">
-      <h4 className="text-sm font-bold text-slate-800 mb-1">{label}</h4>
-      <p className="text-xs text-slate-500 leading-relaxed">{description}</p>
+      <h4 className="text-sm font-black text-slate-800 mb-1 uppercase tracking-tight">{label}</h4>
+      <p className="text-xs text-slate-500 leading-relaxed font-medium">{description}</p>
     </div>
     <button 
       onClick={onToggle}
-      className={`w-12 h-6 rounded-full relative transition-all duration-200 shrink-0 ${enabled ? 'bg-indigo-600 shadow-inner' : 'bg-slate-200'}`}
+      className={`w-12 h-6 rounded-full relative transition-all duration-300 shrink-0 shadow-inner ${enabled ? 'bg-indigo-600' : 'bg-slate-200'}`}
     >
-      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all duration-200 ${enabled ? 'left-7' : 'left-1'}`}></div>
+      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg transition-all duration-300 ${enabled ? 'left-7' : 'left-1'}`}></div>
     </button>
   </div>
 );

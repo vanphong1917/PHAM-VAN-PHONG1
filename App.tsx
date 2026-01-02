@@ -38,18 +38,19 @@ const DEFAULT_SYSTEM_DATA = {
   },
   global_requests: [],
   policies: {
-    minPasswordLength: 8,
+    minPasswordLength: 12,
     requireComplexity: true,
     maxFileSize: 35,
     enforceNextcloud: true,
-    autoLogout: 30
+    autoLogout: 30,
+    adminMfa: true
   }
 };
 
 type Page = 'DASHBOARD' | 'INBOX' | 'APPROVALS' | 'REQUESTS' | 'USERS' | 'DEPARTMENTS' | 'ROLES' | 'POLICIES' | 'SYSTEM' | 'ARCHIVE' | 'PROFILE';
 
 const AppContent: React.FC = () => {
-  const { t, locale, setLocale } = useLanguage();
+  const { t } = useLanguage();
   const [user, setUser] = useState<any>(null);
   const [activePage, setActivePage] = useState<Page>('DASHBOARD');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -95,6 +96,19 @@ const AppContent: React.FC = () => {
     const handleGlobalUpdate = () => {
       const cache = localStorage.getItem('hdh_master_db_cache');
       if (cache) syncToDisk(JSON.parse(cache));
+      
+      // Cập nhật lại state user nếu thông tin trong DB thay đổi (ví dụ: avatar)
+      const savedSession = localStorage.getItem('hdh_current_session');
+      if (savedSession) {
+        const currentSession = JSON.parse(savedSession);
+        const db = JSON.parse(cache || '{}');
+        const dbUser = db.users?.find((u: any) => u.username === currentSession.username);
+        if (dbUser && dbUser.avatar !== currentSession.avatar) {
+          const updatedSession = { ...currentSession, avatar: dbUser.avatar };
+          localStorage.setItem('hdh_current_session', JSON.stringify(updatedSession));
+          setUser(updatedSession);
+        }
+      }
     };
     window.addEventListener('storage_sync', handleGlobalUpdate);
     return () => window.removeEventListener('storage_sync', handleGlobalUpdate);

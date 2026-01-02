@@ -90,7 +90,8 @@ const MailInbox: React.FC<MailInboxProps> = ({ currentUser }) => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    Array.from(files).forEach(file => {
+    // Fix: Explicitly cast 'file' to 'File' to avoid TS errors when Array.from loses type information
+    Array.from(files).forEach((file: File) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         setAttachedFiles(prev => [...prev, {

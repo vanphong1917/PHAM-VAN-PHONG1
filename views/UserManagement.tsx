@@ -58,12 +58,19 @@ const UserManagement: React.FC = () => {
 
   useEffect(() => {
     const handleSync = () => {
+      // Sync Master DB (Users, Depts)
       const cache = localStorage.getItem('hdh_master_db_cache');
       if (cache) {
         const parsed = JSON.parse(cache);
         setDb(parsed);
         setUsers(parsed.users || []);
         setDepartments(parsed.departments || []);
+      }
+      
+      // Sync System Roles - Đảm bảo dropdown và nhãn luôn cập nhật theo module RolesPermissions
+      const savedRoles = localStorage.getItem('hdh_portal_roles');
+      if (savedRoles) {
+        setSystemRoles(JSON.parse(savedRoles));
       }
     };
     window.addEventListener('storage_sync', handleSync);
@@ -81,19 +88,54 @@ const UserManagement: React.FC = () => {
 
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
-    const userToAdd = { id: Date.now(), ...newUser, status: 'Active' };
+    
+    // Kiểm tra trùng lặp Username hoặc Email (Case insensitive)
+    const isUsernameExist = users.some(u => u.username.toLowerCase() === newUser.username.toLowerCase());
+    const isEmailExist = users.some(u => u.email.toLowerCase() === newUser.email.toLowerCase());
+
+    if (isUsernameExist) {
+      alert(`Lỗi: Tên đăng nhập "${newUser.username}" đã tồn tại trong hệ thống.`);
+      return;
+    }
+    if (isEmailExist) {
+      alert(`Lỗi: Email "${newUser.email}" đã được sử dụng.`);
+      return;
+    }
+
+    const userToAdd = { id: Date.now(), ...newUser, status: 'Active', avatar: '' };
     const updatedUsers = [...users, userToAdd];
     saveToMaster(updatedUsers);
     setIsSuccess(true);
     setTimeout(() => {
       setIsSuccess(false);
       setIsAddUserOpen(false);
-      setNewUser({ name: '', username: '', email: '', password: '123', dept: departments.length > 0 ? departments[0].name : 'IT Systems', role: 'USER' });
+      setNewUser({ 
+        name: '', 
+        username: '', 
+        email: '', 
+        password: '123', 
+        dept: departments.length > 0 ? departments[0].name : 'IT Systems', 
+        role: 'USER' 
+      });
     }, 1000);
   };
 
   const handleUpdateUser = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Kiểm tra trùng lặp cho các tài khoản khác khi cập nhật
+    const isUsernameExist = users.some(u => u.id !== editingUser.id && u.username.toLowerCase() === editingUser.username.toLowerCase());
+    const isEmailExist = users.some(u => u.id !== editingUser.id && u.email.toLowerCase() === editingUser.email.toLowerCase());
+
+    if (isUsernameExist) {
+      alert(`Lỗi: Tên đăng nhập "${editingUser.username}" đang thuộc về một nhân viên khác.`);
+      return;
+    }
+    if (isEmailExist) {
+      alert(`Lỗi: Email "${editingUser.email}" đang thuộc về một nhân viên khác.`);
+      return;
+    }
+
     const updatedUsers = users.map((u: any) => u.id === editingUser.id ? editingUser : u);
     saveToMaster(updatedUsers);
     setIsSuccess(true);
@@ -105,17 +147,19 @@ const UserManagement: React.FC = () => {
 
   const handleResetPassword = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPassword.trim()) return;
+    if (!resettingUser) return;
+
     const updatedUsers = users.map((u: any) => 
-      u.id === resettingUser.id ? { ...u, password: newPassword } : u
+      u.id === resettingUser.id ? { ...u, password: newPassword || '123' } : u
     );
+    
     saveToMaster(updatedUsers);
     setIsSuccess(true);
     setTimeout(() => {
       setIsSuccess(false);
       setResettingUser(null);
       setNewPassword('');
-    }, 1000);
+    }, 1500);
   };
 
   const deleteUser = (id: number) => {
@@ -192,8 +236,8 @@ const UserManagement: React.FC = () => {
                 <tr key={user.id} className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-lg ${user.status === 'Locked' ? 'bg-slate-300' : 'bg-indigo-600'}`}>
-                        {user.name.charAt(0)}
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-lg overflow-hidden ${user.status === 'Locked' ? 'bg-slate-300' : 'bg-indigo-600'}`}>
+                        {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : user.name.charAt(0)}
                       </div>
                       <div>
                         <p className="text-sm font-bold text-slate-900 leading-none mb-1">{user.name}</p>
@@ -245,7 +289,6 @@ const UserManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Modals ... Same logic as before but with dynamic Departments */}
       {(isAddUserOpen || editingUser) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
            <div className="bg-white w-full max-w-xl rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp">
@@ -363,8 +406,8 @@ const UserManagement: React.FC = () => {
               ) : (
                 <>
                   <div className="flex items-center gap-4 p-4 bg-amber-50 rounded-2xl border border-amber-100">
-                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-bold text-amber-600 shadow-sm">
-                      {resettingUser.name.charAt(0)}
+                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-bold text-amber-600 shadow-sm overflow-hidden">
+                      {resettingUser.avatar ? <img src={resettingUser.avatar} className="w-full h-full object-cover" /> : resettingUser.name.charAt(0)}
                     </div>
                     <div>
                       <p className="text-xs font-bold text-slate-900">{resettingUser.name}</p>
@@ -385,7 +428,7 @@ const UserManagement: React.FC = () => {
                         placeholder="Nhập mật khẩu an toàn"
                       />
                       <button 
-                        type="button"
+                        type="button" 
                         onClick={() => setShowPwd(!showPwd)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600"
                       >

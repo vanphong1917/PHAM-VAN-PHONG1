@@ -82,8 +82,9 @@ const RolesPermissions: React.FC = () => {
 
   // Sync user counts from actual directory
   useEffect(() => {
-    const savedUsers = localStorage.getItem('hdh_portal_users');
-    const users = savedUsers ? JSON.parse(savedUsers) : [];
+    const savedUsers = localStorage.getItem('hdh_master_db_cache');
+    const db = savedUsers ? JSON.parse(savedUsers) : { users: [] };
+    const users = db.users || [];
     const counts: Record<string, number> = {};
     users.forEach((u: any) => {
       const roleId = u.role || 'USER';
@@ -91,11 +92,6 @@ const RolesPermissions: React.FC = () => {
     });
     setUserCounts(counts);
   }, []);
-
-  // Lưu danh sách vai trò khi có thay đổi
-  useEffect(() => {
-    localStorage.setItem('hdh_portal_roles', JSON.stringify(roles));
-  }, [roles]);
 
   const handleTogglePermission = (permissionId: string) => {
     setRolePermissions(prev => {
@@ -112,6 +108,10 @@ const RolesPermissions: React.FC = () => {
     setTimeout(() => {
       localStorage.setItem('hdh_portal_role_permissions', JSON.stringify(rolePermissions));
       localStorage.setItem('hdh_portal_roles', JSON.stringify(roles));
+      
+      // Quan trọng: Phát tín hiệu đồng bộ để module Danh bạ nhận biết danh sách vai trò đã thay đổi
+      window.dispatchEvent(new Event('storage_sync'));
+      
       setIsSaving(false);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
