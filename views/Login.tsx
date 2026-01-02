@@ -1,22 +1,29 @@
 
-import React, { useState } from 'react';
-import { Mail, Lock, Shield, Layers, ArrowRight, AlertCircle, ChevronLeft, CheckCircle2, User as UserIcon } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Mail, Lock, Shield, Layers, ArrowRight, AlertCircle, ChevronLeft, CheckCircle2, User as UserIcon, Smartphone, Key } from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
 
 interface LoginProps {
   onLogin: (user: any, rememberMe: boolean) => void;
 }
 
-type LoginView = 'LOGIN' | 'FORGOT_PASSWORD' | 'RESET_SUCCESS';
+type LoginView = 'LOGIN' | 'MFA_CHALLENGE' | 'FORGOT_PASSWORD' | 'RESET_SUCCESS';
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const { t, locale, setLocale } = useLanguage();
   const [view, setView] = useState<LoginView>('LOGIN');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [authenticatedUser, setAuthenticatedUser] = useState<any>(null);
+
+  const [db, setDb] = useState<any>(() => {
+    const cache = localStorage.getItem('hdh_master_db_cache');
+    return cache ? JSON.parse(cache) : null;
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,9 +32,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     if (view === 'LOGIN') {
       setTimeout(() => {
-        // Lấy danh sách user thực tế từ "ổ cứng"
-        const savedUsersRaw = localStorage.getItem('hdh_portal_users');
-        const savedUsers = savedUsersRaw ? JSON.parse(savedUsersRaw) : [];
+        // Lấy danh sách user thực tế từ Master DB Cache (Ổ cứng vật lý)
+        const cache = localStorage.getItem('hdh_master_db_cache');
+        const currentDb = cache ? JSON.parse(cache) : { users: [] };
+        const savedUsers = currentDb.users || [];
 
         // Kiểm tra khớp thông tin
         const foundUser = savedUsers.find((u: any) => 
@@ -41,17 +49,45 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             setIsLoading(false);
             return;
           }
-          onLogin({ 
-            email: foundUser.email, 
-            role: foundUser.role, 
-            name: foundUser.name,
-            username: foundUser.username 
-          }, rememberMe);
+
+          // Kiểm tra chính sách MFA
+          const policies = currentDb.policies || {};
+          const isAdminMfaEnabled = foundUser.role === 'ADMIN' && policies.adminMfa;
+
+          if (isAdminMfaEnabled) {
+            setAuthenticatedUser(foundUser);
+            setView('MFA_CHALLENGE');
+            setIsLoading(false);
+          } else {
+            onLogin({ 
+              email: foundUser.email, 
+              role: foundUser.role, 
+              name: foundUser.name,
+              username: foundUser.username,
+              avatar: foundUser.avatar
+            }, rememberMe);
+          }
         } else {
           setError(true);
+          setIsLoading(false);
+        }
+      }, 800);
+    } else if (view === 'MFA_CHALLENGE') {
+      // Giả lập xác thực mã OTP
+      setTimeout(() => {
+        if (mfaCode === '123456' || mfaCode.length === 6) {
+          onLogin({ 
+            email: authenticatedUser.email, 
+            role: authenticatedUser.role, 
+            name: authenticatedUser.name,
+            username: authenticatedUser.username,
+            avatar: authenticatedUser.avatar
+          }, rememberMe);
+        } else {
+          alert("Mã xác thực không chính xác. Vui lòng thử lại.");
         }
         setIsLoading(false);
-      }, 800);
+      }, 1000);
     } else if (view === 'FORGOT_PASSWORD') {
       setTimeout(() => {
         setView('RESET_SUCCESS');
@@ -63,19 +99,68 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
       <div className="max-w-md w-full">
-        <div className="bg-white rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden text-slate-700">
+        <div className="bg-white rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden text-slate-700">
+          
+          {/* Header */}
           <div className="p-8 pb-4 text-center">
-            <div className="inline-flex items-center justify-center p-4 bg-indigo-600 rounded-2xl text-white mb-6 shadow-xl shadow-indigo-200">
-               <Layers size={32} />
+            <div className={`inline-flex items-center justify-center p-4 rounded-2xl text-white mb-6 shadow-xl ${view === 'MFA_CHALLENGE' ? 'bg-rose-600 shadow-rose-100' : 'bg-indigo-600 shadow-indigo-200'}`}>
+               {view === 'MFA_CHALLENGE' ? <Smartphone size={32} /> : <Layers size={32} />}
             </div>
             <h1 className="text-2xl font-black text-slate-900 mb-1 uppercase tracking-tighter italic">Hệ thống hdh portal</h1>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-6">
-              {view === 'LOGIN' ? 'Xác thực người dùng nội bộ' : 'Khôi phục quyền truy cập'}
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-6 px-4">
+              {view === 'LOGIN' ? 'Xác thực người dùng nội bộ' : 
+               view === 'MFA_CHALLENGE' ? 'Xác thực đa yếu tố (MFA Required)' :
+               'Khôi phục quyền truy cập'}
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="p-10 pt-0 space-y-5">
-            {view === 'RESET_SUCCESS' ? (
+            
+            {/* View: MFA Challenge */}
+            {view === 'MFA_CHALLENGE' ? (
+              <div className="space-y-6 animate-scaleUp">
+                <div className="p-5 bg-rose-50 border border-rose-100 rounded-2xl flex items-start gap-4">
+                  <Shield className="text-rose-600 shrink-0 mt-1" size={20} />
+                  <div>
+                    <p className="text-xs font-bold text-rose-900 leading-tight">Mã bảo mật bare-metal</p>
+                    <p className="text-[10px] text-rose-700/70 font-medium mt-1">Nhập mã 6 chữ số từ ứng dụng Authenticator của bạn.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">OTP Code</label>
+                  <div className="relative group">
+                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-rose-600" size={18} />
+                    <input 
+                      type="text"
+                      maxLength={6}
+                      value={mfaCode}
+                      autoFocus
+                      onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="000000"
+                      required
+                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-rose-50 focus:border-rose-600 transition-all font-black text-xl tracking-[0.5em] text-center"
+                    />
+                  </div>
+                </div>
+
+                <button 
+                  type="submit" 
+                  disabled={isLoading || mfaCode.length < 6}
+                  className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all shadow-xl shadow-rose-100 active:scale-95 disabled:opacity-50"
+                >
+                  {isLoading ? "Đang xác nhận..." : "Xác thực và Truy cập"}
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={() => setView('LOGIN')}
+                  className="w-full text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600"
+                >
+                  Quay lại đăng nhập
+                </button>
+              </div>
+            ) : view === 'RESET_SUCCESS' ? (
               <div className="space-y-6 text-center animate-fadeIn">
                 <div className="flex justify-center">
                   <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">

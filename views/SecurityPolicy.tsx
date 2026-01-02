@@ -1,6 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { Shield, Key, FileWarning, Clock, Lock, Smartphone, Save, AlertCircle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import { 
+  Shield, Key, FileWarning, Clock, Lock, Smartphone, Save, AlertCircle, 
+  Eye, EyeOff, CheckCircle2, Monitor, Globe, X, LogOut, ShieldAlert,
+  Smartphone as PhoneIcon, Laptop, MonitorStop
+} from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
 
 const DEFAULT_POLICIES = {
@@ -15,11 +19,21 @@ const DEFAULT_POLICIES = {
   deviceLimit: 3
 };
 
+const SIMULATED_SESSIONS = [
+  { id: 'SESS-001', user: 'admin.hdh', device: 'Chrome / Windows 11', ip: '192.168.1.15', location: 'Hà Nội, VN', lastActive: 'Đang hoạt động', current: true, type: 'PC' },
+  { id: 'SESS-002', user: 'admin.hdh', device: 'iPhone 15 Pro', ip: '172.16.0.42', location: 'TP. Hồ Chí Minh, VN', lastActive: '2 phút trước', current: false, type: 'MOBILE' },
+  { id: 'SESS-003', user: 'phong.hdh', device: 'Edge / MacOS', ip: '10.0.4.102', location: 'Hà Nội, VN', lastActive: '15 phút trước', current: false, type: 'PC' }
+];
+
 const SecurityPolicy: React.FC = () => {
   const { t } = useLanguage();
   const [showValues, setShowValues] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  
+  // State quản lý Modal Sessions
+  const [isSessionsModalOpen, setIsSessionsModalOpen] = useState(false);
+  const [activeSessions, setActiveSessions] = useState<any[]>([]);
 
   // Initialize from master cache
   const [policies, setPolicies] = useState(() => {
@@ -27,6 +41,17 @@ const SecurityPolicy: React.FC = () => {
     const db = cache ? JSON.parse(cache) : {};
     return db.policies || DEFAULT_POLICIES;
   });
+
+  useEffect(() => {
+    // Load sessions from DB or use simulated if empty
+    const cache = localStorage.getItem('hdh_master_db_cache');
+    const db = cache ? JSON.parse(cache) : {};
+    if (!db.active_sessions) {
+      setActiveSessions(SIMULATED_SESSIONS);
+    } else {
+      setActiveSessions(db.active_sessions);
+    }
+  }, []);
 
   const handleToggle = (key: keyof typeof policies) => {
     setPolicies((prev: any) => ({ ...prev, [key]: !prev[key] }));
@@ -44,6 +69,7 @@ const SecurityPolicy: React.FC = () => {
     if (cache) {
       const db = JSON.parse(cache);
       db.policies = policies;
+      db.active_sessions = activeSessions; // Đồng bộ luôn cả danh sách phiên
       localStorage.setItem('hdh_master_db_cache', JSON.stringify(db));
       window.dispatchEvent(new Event('storage_sync'));
     }
@@ -54,6 +80,32 @@ const SecurityPolicy: React.FC = () => {
       setTimeout(() => setShowSuccess(false), 3000);
     }, 1000);
   };
+
+  const revokeSession = (id: string) => {
+    if (confirm("Bạn có chắc chắn muốn ngắt kết nối thiết bị này? Người dùng sẽ phải đăng nhập lại.")) {
+      const updated = activeSessions.filter(s => s.id !== id);
+      setActiveSessions(updated);
+      
+      // Cập nhật Master DB ngay lập tức
+      const cache = localStorage.getItem('hdh_master_db_cache');
+      if (cache) {
+        const db = JSON.parse(cache);
+        db.active_sessions = updated;
+        localStorage.setItem('hdh_master_db_cache', JSON.stringify(db));
+        window.dispatchEvent(new Event('storage_sync'));
+      }
+    }
+  };
+
+  // Tính toán chỉ số an toàn hệ thống dựa trên cấu hình hiện tại
+  const securityScore = (() => {
+    let score = 50;
+    if (policies.adminMfa) score += 25;
+    if (policies.requireComplexity) score += 10;
+    if (policies.minPasswordLength >= 12) score += 10;
+    if (policies.lanMfa) score += 5;
+    return score;
+  })();
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -179,8 +231,8 @@ const SecurityPolicy: React.FC = () => {
                   <p className="text-[10px] text-slate-500 font-bold">Node: BARE-METAL-SEC-01</p>
                 </div>
               </div>
-              <div className="h-12 w-12 flex items-center justify-center border-4 border-emerald-500 border-t-transparent rounded-full font-black text-[10px] text-emerald-600 animate-spin-slow">
-                {policies.adminMfa && policies.requireComplexity ? '98%' : '65%'}
+              <div className="h-12 w-12 flex items-center justify-center border-4 border-emerald-500 border-t-transparent rounded-full font-black text-[10px] text-emerald-600">
+                {securityScore}%
               </div>
             </div>
           </div>
@@ -208,12 +260,86 @@ const SecurityPolicy: React.FC = () => {
               onChange={(val: number) => handleValueChange('deviceLimit', val)}
               unit="thiết bị"
             />
-            <div className="pt-4 flex items-center gap-2 text-[10px] font-black text-indigo-600 cursor-pointer hover:underline uppercase tracking-widest">
+            <button 
+              onClick={() => setIsSessionsModalOpen(true)}
+              className="pt-4 flex items-center gap-2 text-[10px] font-black text-indigo-600 cursor-pointer hover:underline uppercase tracking-widest"
+            >
               Xem tất cả các phiên đang hoạt động <Lock size={14} />
-            </div>
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Sessions Modal */}
+      {isSessionsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp">
+            <div className="px-8 py-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                 <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Monitor size={20} /></div>
+                 <h3 className="font-black text-slate-900 uppercase tracking-widest text-sm italic">Quản lý phiên hoạt động</h3>
+              </div>
+              <button onClick={() => setIsSessionsModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-all border border-transparent hover:border-slate-200">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-8">
+              <div className="mb-6 p-4 bg-indigo-50 rounded-2xl border border-indigo-100 flex gap-3">
+                <ShieldAlert className="text-indigo-600 shrink-0" size={20} />
+                <p className="text-xs text-indigo-900 font-medium">
+                  Danh sách dưới đây hiển thị tất cả các thiết bị hiện đang duy trì phiên đăng nhập vào hdh portal. Bạn có thể thu hồi quyền truy cập của bất kỳ thiết bị nào từ xa.
+                </p>
+              </div>
+
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                {activeSessions.map((session) => (
+                  <div key={session.id} className="p-5 bg-white border border-slate-100 rounded-[1.5rem] hover:border-indigo-200 hover:shadow-sm transition-all group">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className={`p-3 rounded-xl ${session.current ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-100 text-slate-400'}`}>
+                          {session.type === 'PC' ? <Laptop size={20} /> : <PhoneIcon size={20} />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-black text-slate-900">{session.device}</p>
+                            {session.current && <span className="text-[8px] font-black bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded uppercase">Phiên hiện tại</span>}
+                          </div>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><Globe size={12} /> {session.ip}</span>
+                            <span className="text-slate-200">•</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{session.location}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {!session.current && (
+                        <button 
+                          onClick={() => revokeSession(session.id)}
+                          className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                          title="Ngắt kết nối thiết bị"
+                        >
+                          <MonitorStop size={20} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tài khoản: <span className="text-indigo-600">{session.user}</span></p>
+                      <p className="text-[10px] font-bold text-slate-400 italic">{session.lastActive}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button onClick={() => setIsSessionsModalOpen(false)} className="px-8 py-2.5 bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-95 transition-all">
+                Đóng danh sách
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
