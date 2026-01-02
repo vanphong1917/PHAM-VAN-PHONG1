@@ -1,7 +1,19 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Shield, Key, FileWarning, Clock, Lock, Smartphone, Save, AlertCircle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
+
+const DEFAULT_POLICIES = {
+  minPasswordLength: 12,
+  requireComplexity: true,
+  passwordExpiry: 90,
+  maxFileSize: 35,
+  enforceNextcloud: true,
+  adminMfa: true,
+  lanMfa: false,
+  autoLogout: 30,
+  deviceLimit: 3
+};
 
 const SecurityPolicy: React.FC = () => {
   const { t } = useLanguage();
@@ -9,30 +21,25 @@ const SecurityPolicy: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  // Policy States
-  const [policies, setPolicies] = useState({
-    minPasswordLength: 12,
-    requireComplexity: true,
-    passwordExpiry: 90,
-    maxFileSize: 35,
-    enforceNextcloud: true,
-    adminMfa: true,
-    lanMfa: false,
-    autoLogout: 30,
-    deviceLimit: 3
+  // Initialize from localStorage
+  const [policies, setPolicies] = useState(() => {
+    const saved = localStorage.getItem('hdh_portal_policies');
+    return saved ? JSON.parse(saved) : DEFAULT_POLICIES;
   });
 
   const handleToggle = (key: keyof typeof policies) => {
-    setPolicies(prev => ({ ...prev, [key]: !prev[key] }));
+    setPolicies((prev: any) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const handleValueChange = (key: keyof typeof policies, value: number) => {
-    setPolicies(prev => ({ ...prev, [key]: value }));
+    setPolicies((prev: any) => ({ ...prev, [key]: value }));
   };
 
   const handleSave = () => {
     setIsSaving(true);
-    // Simulate API call
+    // Persist to "disk" (localStorage)
+    localStorage.setItem('hdh_portal_policies', JSON.stringify(policies));
+    
     setTimeout(() => {
       setIsSaving(false);
       setShowSuccess(true);
@@ -45,13 +52,13 @@ const SecurityPolicy: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{t('securityTitle')}</h2>
-          <p className="text-slate-500 text-sm">Quản lý cấu hình bảo mật On-Premise & Xác thực danh tính</p>
+          <p className="text-slate-500 text-sm">Quản lý cấu hình bảo mật On-Premise (Dữ liệu đã được đồng bộ với ổ cứng mô phỏng)</p>
         </div>
         <div className="flex items-center gap-3">
           {showSuccess && (
             <div className="flex items-center gap-2 text-emerald-600 text-sm font-bold animate-scaleUp">
               <CheckCircle2 size={18} />
-              Đã lưu thay đổi
+              Đã lưu thay đổi vào hệ thống
             </div>
           )}
           <button 

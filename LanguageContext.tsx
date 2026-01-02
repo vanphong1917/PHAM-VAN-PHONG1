@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { translations } from './i18n';
+import { translations } from './i18n.ts';
 
 type Locale = 'vi' | 'en';
 
@@ -13,7 +13,7 @@ interface LanguageContextType {
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [locale, setLocale] = useState<Locale>('vi'); // Default to Vietnamese as requested
+  const [locale, setLocale] = useState<Locale>('vi');
 
   const t = (key: string): string => {
     const keys = key.split('.');
@@ -23,7 +23,6 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
       if (result && result[k]) {
         result = result[k];
       } else {
-        // Fallback to literal key if not found
         return translations['vi'][k] || translations['en'][k] || key;
       }
     }

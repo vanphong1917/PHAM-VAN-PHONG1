@@ -1,115 +1,237 @@
 
-import React, { useState } from 'react';
-import { UserPlus, Filter, Search, MoreVertical, Shield, Mail, Phone, MapPin, X, User as UserIcon, Building2, Briefcase, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  UserPlus, Users, Filter, Search, MoreVertical, Shield, Mail, X, User as UserIcon, 
+  Building2, Briefcase, CheckCircle2, AtSign, Lock, Trash2, UserCog, Ban, Unlock, KeyRound, ExternalLink, Key, Eye, EyeOff
+} from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
+
+// Default roles used as fallback
+const DEFAULT_ROLES = [
+  { id: 'ADMIN', label: 'Administrator' },
+  { id: 'DIRECTOR', label: 'Director' },
+  { id: 'HEAD', label: 'Department Head' },
+  { id: 'STAFF', label: 'Staff Member' },
+  { id: 'USER', label: 'Basic User' }
+];
 
 const UserManagement: React.FC = () => {
   const { t } = useLanguage();
-  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
   
-  const [users, setUsers] = useState([
-    { id: 1, name: 'Nguyen Van An', email: 'an.nv@enterprise.com', dept: 'IT Systems', role: 'Admin', status: 'Active' },
-    { id: 2, name: 'Manager Peter', email: 'peter@enterprise.com', dept: 'Operations', role: 'Head', status: 'Active' },
-    { id: 3, name: 'Director Jane', email: 'jane.d@enterprise.com', dept: 'Executive', role: 'Director', status: 'Active' },
-    { id: 4, name: 'Tran Binh', email: 'binh.t@enterprise.com', dept: 'IT Systems', role: 'User', status: 'Active' },
-    { id: 5, name: 'Lê Minh', email: 'minh.l@enterprise.com', dept: 'HR Dept', role: 'Staff', status: 'Locked' },
-  ]);
+  // Lấy danh sách nhân viên
+  const [users, setUsers] = useState(() => {
+    const saved = localStorage.getItem('hdh_portal_users');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Lấy danh sách vai trò động từ hệ thống Phân quyền
+  const [systemRoles, setSystemRoles] = useState(() => {
+    const saved = localStorage.getItem('hdh_portal_roles');
+    return saved ? JSON.parse(saved) : DEFAULT_ROLES;
+  });
+
+  // Tạo map để hiển thị Label nhanh chóng
+  const roleLabelMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    systemRoles.forEach((r: any) => {
+      map[r.id] = r.label;
+    });
+    return map;
+  }, [systemRoles]);
+
+  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [resettingUser, setResettingUser] = useState<any>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  const [newPassword, setNewPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('hdh_portal_users', JSON.stringify(users));
+    // Mỗi khi danh sách nhân viên thay đổi, ta cũng cần báo hiệu cho RolesPermissions biết để cập nhật userCounts
+    // Tuy nhiên trong cùng 1 phiên làm việc, useEffect của RolesPermissions sẽ tự chạy khi view đó mount.
+  }, [users]);
 
   const [newUser, setNewUser] = useState({
     name: '',
+    username: '',
     email: '',
+    password: '123',
     dept: 'IT Systems',
-    role: 'User'
+    role: 'USER'
   });
 
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
-    const id = users.length + 1;
-    const userToAdd = { ...newUser, id, status: 'Active' };
-    
-    // Simulate API delay
+    const userToAdd = { id: Date.now(), ...newUser, status: 'Active' };
+    setUsers([...users, userToAdd]);
+    setIsSuccess(true);
     setTimeout(() => {
-      setUsers([...users, userToAdd]);
-      setIsSuccess(true);
-      setTimeout(() => {
-        setIsSuccess(false);
-        setIsAddUserOpen(false);
-        setNewUser({ name: '', email: '', dept: 'IT Systems', role: 'User' });
-      }, 1500);
-    }, 500);
+      setIsSuccess(false);
+      setIsAddUserOpen(false);
+      setNewUser({ name: '', username: '', email: '', password: '123', dept: 'IT Systems', role: 'USER' });
+    }, 1000);
   };
 
+  const handleUpdateUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    setUsers(users.map((u: any) => u.id === editingUser.id ? editingUser : u));
+    setIsSuccess(true);
+    setTimeout(() => {
+      setIsSuccess(false);
+      setEditingUser(null);
+    }, 1000);
+  };
+
+  const handleResetPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword.trim()) return;
+
+    setUsers(users.map((u: any) => 
+      u.id === resettingUser.id ? { ...u, password: newPassword } : u
+    ));
+    
+    setIsSuccess(true);
+    setTimeout(() => {
+      setIsSuccess(false);
+      setResettingUser(null);
+      setNewPassword('');
+    }, 1000);
+  };
+
+  const deleteUser = (id: number) => {
+    if(confirm("Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản này?")) {
+      setUsers(users.filter((u: any) => u.id !== id));
+    }
+  };
+
+  const toggleStatus = (id: number) => {
+    setUsers(users.map((u: any) => {
+      if (u.id === id) return { ...u, status: u.status === 'Active' ? 'Locked' : 'Active' };
+      return u;
+    }));
+  };
+
+  const filteredUsers = users.filter((u: any) => {
+    const q = searchQuery.toLowerCase();
+    const roleLabel = (roleLabelMap[u.role] || u.role).toLowerCase();
+    return (
+      u.name.toLowerCase().includes(q) ||
+      u.username.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      u.dept.toLowerCase().includes(q) ||
+      roleLabel.includes(q)
+    );
+  });
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6 animate-fadeIn">
+      <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">{t('directory')}</h2>
-          <p className="text-slate-500">Quản lý danh tính đồng bộ từ AD Domain Controller nội bộ</p>
+          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+            <Users className="text-indigo-600" size={28} /> Quản lý Nhân sự
+          </h2>
+          <p className="text-slate-500 text-sm italic">Quản lý định danh cho {users.length} nhân viên trong hệ thống.</p>
         </div>
-        <div className="flex gap-2">
-          <button 
-            onClick={() => setIsAddUserOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-          >
-            <UserPlus size={16} /> {t('addUser')}
-          </button>
-        </div>
+        <button 
+          onClick={() => {
+            // Cập nhật lại danh sách role mới nhất trước khi mở modal
+            const savedRoles = localStorage.getItem('hdh_portal_roles');
+            if (savedRoles) setSystemRoles(JSON.parse(savedRoles));
+            setIsAddUserOpen(true);
+          }}
+          className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold uppercase tracking-widest shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95"
+        >
+          Thêm nhân viên
+        </button>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-4">
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-4 bg-slate-50/50 border-b border-slate-100 flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input 
               type="text" 
-              placeholder={t('searchPlaceholder')} 
-              className="pl-10 pr-4 py-2 bg-slate-50 border-none outline-none rounded-lg text-sm w-full" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Tìm theo tên, email, phòng ban, vai trò..." 
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-100" 
             />
           </div>
-          <button className="flex items-center gap-2 px-3 py-2 text-slate-600 bg-slate-50 rounded-lg text-sm font-medium hover:bg-slate-100">
-            <Filter size={16} /> Lọc
-          </button>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left">
             <thead>
-              <tr className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                <th className="px-6 py-4">{t('fullName')}</th>
-                <th className="px-6 py-4">{t('emailAddress')}</th>
-                <th className="px-6 py-4">{t('department')}</th>
-                <th className="px-6 py-4">{t('role')}</th>
-                <th className="px-6 py-4">{t('status')}</th>
+              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                <th className="px-8 py-4">Nhân viên</th>
+                <th className="px-6 py-4">Tài khoản</th>
+                <th className="px-6 py-4">Phòng ban</th>
+                <th className="px-6 py-4">Vai trò</th>
+                <th className="px-6 py-4">Trạng thái</th>
                 <th className="px-6 py-4 w-10"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {users.map((user) => (
-                <tr key={user.id} className="hover:bg-slate-50 transition-colors group">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <img src={`https://picsum.photos/seed/user${user.id}/40/40`} className="w-9 h-9 rounded-full" />
+              {filteredUsers.map((user: any) => (
+                <tr key={user.id} className="hover:bg-slate-50/50 transition-colors group">
+                  <td className="px-8 py-5">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-lg ${user.status === 'Locked' ? 'bg-slate-300' : 'bg-indigo-600'}`}>
+                        {user.name.charAt(0)}
+                      </div>
                       <div>
-                        <p className="text-sm font-bold text-slate-900">{user.name}</p>
-                        <p className="text-xs text-slate-400">ID: EMP-00{user.id}</p>
+                        <p className="text-sm font-bold text-slate-900 leading-none mb-1">{user.name}</p>
+                        <p className="text-[10px] font-medium text-slate-400 italic">{user.email}</p>
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-600 font-medium">{user.email}</td>
-                  <td className="px-6 py-4 text-sm text-slate-600">{user.dept}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold inline-flex">
-                      <Shield size={10} /> {user.role}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`text-[10px] font-bold uppercase ${user.status === 'Active' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {t(user.status)}
+                  <td className="px-6 py-5 text-sm font-mono text-slate-600">{user.username}</td>
+                  <td className="px-6 py-5 text-xs font-bold text-slate-500 uppercase tracking-widest">{user.dept}</td>
+                  <td className="px-6 py-5">
+                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${
+                      user.role === 'ADMIN' ? 'bg-rose-50 text-rose-600 border-rose-100' : 
+                      user.role === 'DIRECTOR' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                      'bg-indigo-50 text-indigo-600 border-indigo-100'
+                    }`}>
+                      {roleLabelMap[user.role] || user.role}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                    <button className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"><MoreVertical size={18} /></button>
+                  <td className="px-6 py-5">
+                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full border ${user.status === 'Active' ? 'text-emerald-500 border-emerald-100 bg-emerald-50' : 'text-rose-500 border-rose-100 bg-rose-50'}`}>
+                      {user.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-5">
+                    <div className="relative group/menu inline-block">
+                      <button className="p-2 text-slate-400 hover:bg-white hover:shadow-sm rounded-lg border border-transparent hover:border-slate-200 transition-all">
+                        <MoreVertical size={18} />
+                      </button>
+                      <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-2xl py-2 z-30 opacity-0 invisible group-focus-within:opacity-100 group-focus-within:visible transition-all">
+                        <button 
+                          onClick={() => {
+                            // Cập nhật role list trước khi sửa
+                            const savedRoles = localStorage.getItem('hdh_portal_roles');
+                            if (savedRoles) setSystemRoles(JSON.parse(savedRoles));
+                            setEditingUser(user);
+                          }} 
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-indigo-600"
+                        >
+                          <UserCog size={16} /> Sửa hồ sơ
+                        </button>
+                        <button onClick={() => setResettingUser(user)} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-amber-600 hover:bg-slate-50">
+                          <Key size={16} /> Reset mật khẩu
+                        </button>
+                        <button onClick={() => toggleStatus(user.id)} className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold ${user.status === 'Active' ? 'text-rose-500' : 'text-emerald-500'} hover:bg-slate-50`}>
+                          {user.status === 'Active' ? <Ban size={16} /> : <Unlock size={16} />} {user.status === 'Active' ? 'Khóa tài khoản' : 'Mở khóa'}
+                        </button>
+                        <button onClick={() => deleteUser(user.id)} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50">
+                          <Trash2 size={16} /> Xóa vĩnh viễn
+                        </button>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -118,113 +240,170 @@ const UserManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Add User Modal */}
-      {isAddUserOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="font-bold text-slate-900 uppercase tracking-wide text-sm">{t('addUser')}</h3>
-              <button onClick={() => setIsAddUserOpen(false)} className="p-1.5 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200">
+      {/* Modal Reset Mật khẩu */}
+      {resettingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp">
+            <div className="px-8 py-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-black text-slate-900 uppercase tracking-widest text-sm italic">Reset Mật khẩu</h3>
+              <button onClick={() => setResettingUser(null)} className="p-2 hover:bg-white rounded-xl transition-all border border-transparent hover:border-slate-200">
                 <X size={20} />
               </button>
             </div>
-
-            <form onSubmit={handleAddUser} className="p-6 space-y-5">
+            <form onSubmit={handleResetPassword} className="p-10 space-y-6">
               {isSuccess ? (
-                <div className="py-12 flex flex-col items-center justify-center space-y-4 animate-scaleUp">
-                  <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shadow-lg shadow-emerald-50">
+                <div className="py-8 flex flex-col items-center justify-center space-y-4 text-center">
+                  <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center animate-bounce">
                     <CheckCircle2 size={32} />
                   </div>
-                  <p className="font-bold text-slate-800">Người dùng đã được tạo thành công</p>
-                  <p className="text-xs text-slate-500">Đang đồng bộ với Active Directory...</p>
+                  <p className="font-black text-slate-900 uppercase tracking-tighter">Mật khẩu đã được thay đổi</p>
                 </div>
               ) : (
                 <>
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{t('fullName')}</label>
-                    <div className="relative group">
-                      <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600" size={18} />
-                      <input 
-                        type="text" 
-                        required
-                        value={newUser.name}
-                        onChange={(e) => setNewUser({...newUser, name: e.target.value})}
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-medium text-sm"
-                        placeholder="Nguyễn Văn A"
-                      />
+                  <div className="flex items-center gap-4 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-bold text-amber-600 shadow-sm">
+                      {resettingUser.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-900">{resettingUser.name}</p>
+                      <p className="text-[10px] text-slate-500 font-mono">@{resettingUser.username}</p>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{t('emailAddress')}</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu mới</label>
                     <div className="relative group">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600" size={18} />
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600" size={18} />
                       <input 
-                        type="email" 
+                        type={showPwd ? "text" : "password"}
                         required
-                        value={newUser.email}
-                        onChange={(e) => setNewUser({...newUser, email: e.target.value})}
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-medium text-sm"
-                        placeholder="email@enterprise.com"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full pl-10 pr-12 py-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-mono text-sm"
+                        placeholder="Nhập mật khẩu an toàn"
                       />
+                      <button 
+                        type="button"
+                        onClick={() => setShowPwd(!showPwd)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600"
+                      >
+                        {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
                     </div>
+                    <button 
+                      type="button" 
+                      onClick={() => setNewPassword('123')}
+                      className="text-[10px] font-bold text-indigo-600 hover:underline uppercase tracking-widest mt-1"
+                    >
+                      Dùng mặc định (123)
+                    </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{t('department')}</label>
-                      <div className="relative group">
-                        <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <select 
-                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-medium text-sm appearance-none"
-                          value={newUser.dept}
-                          onChange={(e) => setNewUser({...newUser, dept: e.target.value})}
-                        >
-                          <option>IT Systems</option>
-                          <option>HR Dept</option>
-                          <option>Finance</option>
-                          <option>Operations</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{t('role')}</label>
-                      <div className="relative group">
-                        <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <select 
-                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-medium text-sm appearance-none"
-                          value={newUser.role}
-                          onChange={(e) => setNewUser({...newUser, role: e.target.value})}
-                        >
-                          <option>User</option>
-                          <option>Staff</option>
-                          <option>Head</option>
-                          <option>Director</option>
-                          <option>Admin</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-6 flex items-center justify-end gap-3">
-                    <button 
-                      type="button"
-                      onClick={() => setIsAddUserOpen(false)}
-                      className="px-6 py-2.5 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-slate-600"
-                    >
-                      {t('cancel')}
-                    </button>
-                    <button 
-                      type="submit"
-                      className="px-8 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all hover:-translate-y-0.5"
-                    >
-                      {t('save')}
-                    </button>
+                  <div className="pt-4 flex justify-end gap-3">
+                    <button type="button" onClick={() => setResettingUser(null)} className="px-6 py-2.5 text-slate-400 font-bold uppercase tracking-widest text-xs">Hủy</button>
+                    <button type="submit" className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-100">Xác nhận Reset</button>
                   </div>
                 </>
               )}
             </form>
           </div>
+        </div>
+      )}
+
+      {(isAddUserOpen || editingUser) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+           <div className="bg-white w-full max-w-xl rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden animate-scaleUp">
+              <div className="px-8 py-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-black text-slate-900 uppercase tracking-widest text-sm italic">
+                  {editingUser ? "Cập nhật nhân viên" : "Thêm nhân viên mới"}
+                </h3>
+                <button onClick={() => {setIsAddUserOpen(false); setEditingUser(null);}} className="p-2 hover:bg-white rounded-xl transition-all border border-transparent hover:border-slate-200">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <form onSubmit={editingUser ? handleUpdateUser : handleAddUser} className="p-10 space-y-6">
+                {isSuccess ? (
+                  <div className="py-12 flex flex-col items-center justify-center space-y-4">
+                    <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center shadow-lg shadow-emerald-50 animate-bounce">
+                      <CheckCircle2 size={40} />
+                    </div>
+                    <p className="font-black text-slate-900 text-lg uppercase tracking-tighter">Dữ liệu đã được lưu</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Họ và tên</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={editingUser ? editingUser.name : newUser.name}
+                        onChange={(e) => editingUser ? setEditingUser({...editingUser, name: e.target.value}) : setNewUser({...newUser, name: e.target.value})}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-bold text-sm"
+                        placeholder="VD: Nguyễn Văn A"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Username</label>
+                        <input 
+                          type="text" 
+                          required
+                          value={editingUser ? editingUser.username : newUser.username}
+                          onChange={(e) => editingUser ? setEditingUser({...editingUser, username: e.target.value}) : setNewUser({...newUser, username: e.target.value})}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-mono text-sm"
+                          placeholder="nv.a"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email</label>
+                        <input 
+                          type="email" 
+                          required
+                          value={editingUser ? editingUser.email : newUser.email}
+                          onChange={(e) => editingUser ? setEditingUser({...editingUser, email: e.target.value}) : setNewUser({...newUser, email: e.target.value})}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 font-mono text-sm"
+                          placeholder="a@hdh.com.vn"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Phòng ban</label>
+                        <select 
+                          value={editingUser ? editingUser.dept : newUser.dept}
+                          onChange={(e) => editingUser ? setEditingUser({...editingUser, dept: e.target.value}) : setNewUser({...newUser, dept: e.target.value})}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-sm"
+                        >
+                          <option>IT Systems</option>
+                          <option>HR Dept</option>
+                          <option>Finance</option>
+                          <option>Executive</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex justify-between">
+                          Vai trò
+                        </label>
+                        <select 
+                          value={editingUser ? editingUser.role : newUser.role}
+                          onChange={(e) => editingUser ? setEditingUser({...editingUser, role: e.target.value}) : setNewUser({...newUser, role: e.target.value})}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-sm"
+                        >
+                          {systemRoles.map((role: any) => (
+                            <option key={role.id} value={role.id}>{role.label} ({role.id})</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                      <button type="button" onClick={() => {setIsAddUserOpen(false); setEditingUser(null);}} className="px-6 py-2.5 text-slate-400 font-bold uppercase tracking-widest text-xs hover:text-slate-600">Hủy</button>
+                      <button type="submit" className="px-10 py-3 bg-indigo-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-100 active:scale-95">Lưu thông tin</button>
+                    </div>
+                  </>
+                )}
+              </form>
+           </div>
         </div>
       )}
     </div>
